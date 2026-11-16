@@ -42,12 +42,19 @@ keep_awake() {  # <pid> [why]
         windows) wpid=$(cat "/proc/$pid/winpid" 2>/dev/null) || return 0
                  powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass \
                      -File "$(cygpath -w "$PLATFORM_HERE/keep_awake.ps1")" "$wpid" >/dev/null 2>&1 & ;;
-        *) if command -v systemd-inhibit >/dev/null 2>&1; then
+        *) if can_inhibit; then
                systemd-inhibit --what=idle:sleep --who=MetaLoop --why="$why" --mode=block \
                    sh -c 'while kill -0 "$1" 2>/dev/null; do sleep 20; done' sh "$pid" >/dev/null 2>&1 &
            fi ;;
     esac
     return 0
+}
+
+# Linux: whether systemd-inhibit is here and may take a sleep hold (a container, an SSH login or a CI runner may have
+# the command and be refused the hold). A loop is never wrapped in a hold that would stop it from starting.
+can_inhibit() {
+    command -v systemd-inhibit >/dev/null 2>&1 &&
+        systemd-inhibit --what=idle:sleep --who=MetaLoop --why="checking" --mode=block true >/dev/null 2>&1
 }
 
 # Sleep <secs>, then set SLEPT to how long the computer was asleep (or suspended) on top of that: 0 below

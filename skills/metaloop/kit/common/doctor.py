@@ -191,7 +191,8 @@ def keep_awake():
         add("keep awake", need, "ok", "caffeinate, on mains power; " + lid)
     elif WIN and (shutil.which("powershell.exe") or shutil.which("powershell")):
         add("keep awake", need, "ok", "keep_awake.ps1; " + lid)
-    elif not WIN and shutil.which("systemd-inhibit"):
+    elif not WIN and shutil.which("systemd-inhibit") and run(["systemd-inhibit", "--what=idle:sleep", "--who=MetaLoop",
+                                                               "--why=checking", "--mode=block", "true"])[0] == 0:
         add("keep awake", need, "ok", "systemd-inhibit; " + lid)
     else:
         add("keep awake", need, "warn", "nothing here can hold the computer awake, so a sleep stalls the run",

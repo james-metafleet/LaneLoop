@@ -845,6 +845,14 @@ EOF
     check "the script ran detached ($(head -c 80 "$T/launch.out"))" wait_for 10 test -s "$T/launched"
     [ "$(uname -s)" = Darwin ] && check "kept awake: caffeinate holds a no-sleep assertion for it" \
         sh -c "[ \"\$(sed -n 2p '$T/launched')\" -ge 1 ]"
+    if [ "$(uname -s)" = Linux ]; then
+        # systemd-inhibit present but refused the hold (a container, an SSH login, a CI runner): the loop starts anyway
+        mkdir -p "$T/noinhibit"; printf '#!/bin/sh\necho "Failed to inhibit: Access denied" >&2\nexit 1\n' > "$T/noinhibit/systemd-inhibit"
+        chmod +x "$T/noinhibit/systemd-inhibit"; rm -f "$T/launched"
+        tmux kill-session -t "=$TMUX_NAME" 2>/dev/null; screen -S "$TMUX_NAME" -X quit 2>/dev/null
+        PATH="$T/noinhibit:$PATH" bash "$T/fix/launch.sh" "$TMUX_NAME" "$T/hello.sh" > "$T/launch2.out" 2>&1
+        check "a systemd-inhibit that refuses the hold doesn't stop the loop from starting" wait_for 10 test -s "$T/launched"
+    fi
 else
     skip "launch.sh: no tmux or screen (or Windows, where it opens mintty)"
 fi

@@ -33,7 +33,7 @@ if [ "$PLATFORM" = mac ]; then
         exit 3
     fi
     wake=(caffeinate -is)
-elif command -v systemd-inhibit >/dev/null 2>&1 && [ "${METALOOP_KEEP_AWAKE:-1}" != 0 ]; then
+elif [ "${METALOOP_KEEP_AWAKE:-1}" != 0 ] && can_inhibit; then
     wake=(systemd-inhibit --what=idle:sleep --who=MetaLoop "--why=MetaLoop loop: $title" --mode=block)
 fi
 # PATH goes in explicitly: a tmux server started earlier keeps the environment it was started with. Plain `bash`, not
