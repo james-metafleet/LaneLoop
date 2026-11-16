@@ -76,10 +76,12 @@ while :; do
     log "session $n start (status $st, $pin pin: $("$PYTHON" "$ROOT/agent_run.py" pin "$pin"))"
     # agent_run.py starts the role's agent on its model (re-read from loop.conf, so crew.py set applies from the next
     # session), feeds it the runbook and the prompt, keeps its context in bounds and prints the session's result line.
+    awake_mark
     res=$("$PYTHON" "$ROOT/agent_run.py" session "$pin" --prompt "$prompt" \
         --system "$(cygpath -m "$ROOT/runbook.md")" --settings "$(cygpath -m "$ROOT/settings.json")" \
         --log ".fixloop/logs/session-$n.jsonl" --err ".fixloop/logs/session-$n.err")
     rc=$?
+    slept=$(slept_since)   # the computer slept during the session: its calls may have failed, through no fault of its own
     IFS='|' read -r sub cost turns apierr text <<< "$res"
     if [ "$sub" = agent_missing ]; then   # the pin's agent isn't installed (or was removed): not a session, not a strike
         n=$((n - 1))
@@ -108,11 +110,13 @@ while :; do
     [ -f .fixloop/state/last_stop.json ] && kind=$("$PYTHON" -c "import json; print(json.load(open('.fixloop/state/last_stop.json')).get('kind',''))")
     last_end="${kind:-$sub}"
     echo "$n|$last_end|$cost|$turns|$(date +%s)" >> .fixloop/state/sessions.txt
-    log "session $n end: $last_end · \$$cost · $turns turns · rc=$rc · $("$PYTHON" "$ROOT/task.py" status)"
+    log "session $n end: $last_end · \$$cost · $turns turns · rc=$rc · $("$PYTHON" "$ROOT/task.py" status)$([ "$slept" -gt 0 ] && echo " · the computer slept $(duration "$slept")")"
     case "$kind" in wrong-model|guard-error)
         log "STOP: guard ($kind)"; "$PYTHON" "$ROOT/task.py" block "context guard stopped the chain: $kind" >/dev/null; break ;; esac
     if [ "$(fingerprint)" != "$fp_before" ]; then
         strikes=0; soft=0
+    elif [ "$(notes_fp)" = "$notes_before" ] && [ "$slept" -gt 0 ]; then
+        log "no progress in session $n, but the computer slept for $(duration "$slept") during it: not a strike"
     elif [ "$(notes_fp)" = "$notes_before" ]; then
         strikes=$((strikes + 1)); log "no progress in session $n (strike $strikes of 2)"
         if [ "$strikes" -ge 2 ]; then "$PYTHON" "$ROOT/task.py" block "two sessions in a row made no progress" >/dev/null; log "STOP: no progress"; break; fi

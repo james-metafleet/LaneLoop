@@ -117,7 +117,7 @@ DEFAULTS = {
     # pre-crew MODEL, MODEL_ARG, EFFORT, CTX_WINDOW (PLAN_* for the plan pin); passing those old keys still works.
     "CREW": crew.DEFAULT_CREW,
     "CODEX_SANDBOX": "workspace-write",     # Codex sessions: danger-full-access only on the owner's decision (runbook)
-    "SESSION_TIMEOUT_MIN": "300",           # any session, any agent: a runaway guard, not a forecast
+    "SESSION_TIMEOUT_MIN": "300",           # any session, any agent, in awake time: a runaway guard, not a forecast
     "SOFT_PCT": "65",                       # hand-off
     "HARD_PCT": "72",                       # forced stop; must stay below the 75% ceiling
     "BUDGET_PER_SESSION": "150",            # USD, a runaway guard, not a forecast

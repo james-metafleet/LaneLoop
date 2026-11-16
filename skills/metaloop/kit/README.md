@@ -50,9 +50,12 @@ anything (see [reference/orchestrator.md](../reference/orchestrator.md), "Missin
   `PLANNER=grill` plans without it.
 - **Verify runs:** Chrome · Node (for `npx chrome-devtools-mcp`) · curl · the profile's `verify.start` (or
   `START_SERVER=0` against an app someone runs elsewhere).
-- **Windows:** Git Bash with `mintty` and `cygpath`.
+- **Windows:** Git Bash with `mintty` and `cygpath`; PowerShell keeps the computer awake (`keep_awake.ps1`).
 - **macOS:** `tmux` (or the `screen` macOS ships) for detached runs; mains power and an open lid for unattended runs
   (`launch.sh` runs them under `caffeinate` and refuses on battery). Nothing else: no Homebrew bash, no `python` shim.
+- **Linux:** `tmux` or `screen`; `systemd-inhibit` (systemd) keeps the computer awake.
+- **Every platform:** loops and the orchestrator's watchers hold the computer awake while they run. A closed laptop lid
+  still sleeps it; if it sleeps anyway, the watchers say so on waking and nothing counts the lost time.
 
 ## Start a run
 
@@ -99,9 +102,9 @@ Machine fallbacks (doctor.py says when each applies):
 | `agent_run.py session\|preflight\|argv\|pin` | Runs one session on a role's pin, on any agent: its command line, the runbook, the context guard (the hook on Claude Code, the event stream elsewhere), the guard-rail shims for git and gh, the end gate, the result line. `argv` shows the command without running it. |
 | `consult.py <role> <name> "<question>"` | A read-only question to a role's pin (research, or plan for reviews), answered in `consults/<name>.md`; `--batch` runs many at once. |
 | `agents.json` | The agents the kit drives and the models it knows: windows, efforts, prices, dated benchmark notes. |
-| `launch.sh <name> <start.sh> [args]` | Starts a loop without taking focus: minimised mintty (Windows), detached tmux or screen under caffeinate (macOS). |
-| `platform.sh` | Sourced by every shell script: the Windows calls (cygpath, toasts, netstat, taskkill, PowerShell) and their macOS / Linux equivalents. |
-| `ctx_guard.py`, `session_result.py`, `notify.ps1` | Claude Code's context and model guard (a hook); a Claude Code session log's result line; the Windows toast. |
+| `launch.sh <name> <start.sh> [args]` | Starts a loop without taking focus and keeps the computer awake under it: minimised mintty (Windows), detached tmux or screen (macOS under caffeinate, Linux under systemd-inhibit). |
+| `platform.sh` | Sourced by every shell script: the Windows calls (cygpath, toasts, netstat, taskkill, PowerShell) and their macOS / Linux equivalents, and `keep_awake`, `nap` and `slept_since`, which keep the computer awake and notice when it slept. |
+| `ctx_guard.py`, `session_result.py`, `notify.ps1`, `keep_awake.ps1` | Claude Code's context and model guard (a hook); a Claude Code session log's result line; the Windows toast; the Windows keep-awake hold. |
 | `live_page.py`, `live_page.html` | A chain's (or the verify run's) live page, written to `live/<slug>.live.html` in the run folder, never committed (the repo ignores `*.live.html`); `--url` records where it was published. It draws itself from its own database. |
 | `live_sync.py` | The writes that keep each live page current (state, lines, questions, review items), for the main session's ArtifactData batch; `--done` once written; `--attention` prints the main window's one line per thing a page needs, with its link. |
 | `two_way.js` | Shared by the live pages and the plan page: Ask Claude (Send to Claude), and Claude's answers from the page's `replies`. |
@@ -118,7 +121,7 @@ Machine fallbacks (doctor.py says when each applies):
 | `runbook.md` | Rendered from the template; fill its FILL IN parts (what is verified, P0, approved writes, how sessions sign in, routes, sandboxes). |
 | `settings.json`, `mcp.json` | Session permissions and hooks; the Chrome DevTools MCP on the run's debug port. |
 | `end_gate.py` | Stop hook: no ending before the ledger and HANDOFF.md are written. |
-| `wait_verify.sh` | Watcher: returns on PAUSED, the end, or a STOP, and every `LIVE_SYNC_MIN` minutes when the ledger changed. |
+| `wait_verify.sh` | Watcher: returns on PAUSED, the end, or a STOP, every `LIVE_SYNC_MIN` minutes when the ledger changed, and on waking from a sleep. Keeps the computer awake while it waits. |
 | `raise_chrome.sh` (`raise_chrome.ps1`), `resume_on_signin.sh` | Put the run's Chrome in front on the right tab; resume the loop when the sign-in lands. |
 
 ## Fix run (`kit/fix`)
@@ -137,7 +140,7 @@ Machine fallbacks (doctor.py says when each applies):
 | `pr_read.py <PR> comments\|reviews\|issue` | The chains' only way to read PR comments: GET only (chains may not call `gh api`). |
 | `runbook.md`, `settings.json`, `end_gate.py` | What every chain session is told and allowed; its stop hook. |
 | `status.py [queue]` | Every branch's state, phase, PR and last note. |
-| `wait_chain.sh`, `wait_gate.sh <slug>`, `wait_ci.sh <PR>...` | Watchers; each times out after `WAIT_HOURS` and prints the state it saw. `wait_chain.sh` also returns on a chain's question, and every `LIVE_SYNC_MIN` minutes when a chain's state changed. |
+| `wait_chain.sh`, `wait_gate.sh <slug>`, `wait_ci.sh <PR>...` | Watchers; each keeps the computer awake while it waits, times out after `WAIT_HOURS` of awake time and prints the state it saw. `wait_chain.sh` also returns on a chain's question, every `LIVE_SYNC_MIN` minutes when a chain's state changed, and on waking from a sleep. |
 | `fix_page.py`, `md_to_page.py`, `post_publish.sh` | Make a design page publishable; render a schema page; link the published artifact in its README row. |
 | `record_signoff.py` | Record a sign-off on design branches and queue their builds (`--dry-run` first). |
 | `approve.py` | Record the owner's review-item approvals (from each chain's live page) and queue the chains that apply them. |

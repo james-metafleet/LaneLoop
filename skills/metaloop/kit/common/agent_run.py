@@ -30,8 +30,8 @@ What stays the same on every agent:
   runbook stays binding and the orchestrator checks every branch.
 - The end gate. Claude Code's Stop hook (end_gate.py) keeps a session from ending without its hand-off. Elsewhere, a
   session that ended without one is resumed once with the same ask.
-- A wall-clock cap (SESSION_TIMEOUT_MIN), the result line, the usage-limit detection (api_error usage_limit_reached /
-  rate_limit_error) and the logs.
+- A time cap (SESSION_TIMEOUT_MIN, counted in awake time, so a sleep is no hang), the result line, the usage-limit
+  detection (api_error usage_limit_reached / rate_limit_error) and the logs.
 
 Escape hatches for a CLI that changed: METALOOP_BIN_<AGENT> names another binary, METALOOP_ARGS_<AGENT> adds flags
 (shell words), e.g. METALOOP_ARGS_CODEX='-c model_verbosity=low'.
@@ -689,9 +689,9 @@ def run_once(ag, argv, text, env, log, err, soft, hard, deadline):
     threading.Thread(target=feed, daemon=True).start()
     timed_out = []
 
-    def watchdog():
+    def watchdog():   # deadline is on the monotonic clock: it stops while the computer sleeps, so a sleep is no hang
         while proc.poll() is None:
-            if time.time() > deadline:
+            if time.monotonic() > deadline:
                 timed_out.append(1)
                 terminate(proc)
                 return
@@ -781,7 +781,7 @@ def session(role, o):
     o.setdefault("run", c.get("RUN") or HERE)
     o.setdefault("codex_sandbox", c.get("CODEX_SANDBOX") or "workspace-write")
     o.setdefault("state", state_dir())
-    deadline = time.time() + 60 * float(c.get("SESSION_TIMEOUT_MIN") or 300)
+    deadline = time.monotonic() + 60 * float(c.get("SESSION_TIMEOUT_MIN") or 300)   # awake time, not wall-clock time
     env = dict(os.environ)
     env.update(ag.env(o))
     env.update({"LOOP_CTX_WINDOW": str(p["window"]), "LOOP_SOFT_PCT": c.get("SOFT_PCT", "65"),

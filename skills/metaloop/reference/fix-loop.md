@@ -100,7 +100,8 @@ their words. Keep anything that needs a design or schema sign-off out of a build
 ## Watching and finishing
 
 - `wait_chain.sh` returns on the next chain end or question with every `chain stops: <state> · <summary>` and `chain asks`
-  line since, and every `LIVE_SYNC_MIN` minutes (default 10) when a chain's state changed; re-arm it every time.
+  line since, and every `LIVE_SYNC_MIN` minutes (default 10) when a chain's state changed; re-arm it every time. It
+  keeps the computer awake while it waits, and returns with `the computer slept for <time>` if it slept anyway.
   `status.py [queue]` lists every branch's state.
 - Each time: sync the live pages and post the attention lines (orchestrator reference, "Live Pages").
 - On `awaiting_owner`: read the summary and the notes (look for "HEADS-UP", "Out of scope, seen", known gaps the chain

@@ -11,6 +11,14 @@ Everything the main session does, in the order it comes up. Commands run from th
 - Launch loops with `<run>/launch.sh` (a minimised mintty window on Windows, a detached tmux session under caffeinate
   on macOS), never a window that grabs focus: it takes the owner's keystrokes. On macOS, tell the owner how to watch it
   (`tmux attach -t <name>`, leave with Ctrl-b d).
+- The computer stays awake while anything of the run is working: each loop (`launch.sh`) and each watcher holds it
+  awake for as long as it runs (caffeinate on macOS, systemd-inhibit on Linux, `keep_awake.ps1` on Windows). A host
+  app's own keep-awake usually lets go a few minutes after the main session goes idle, so it doesn't cover a run. A
+  closed laptop lid still sleeps it: at the start, tell the owner to keep the lid open and the laptop on mains power.
+- A watcher that returns with `the computer slept for <time>` means everything paused, nothing failed. Before
+  re-arming it: `status.py` for every chain, `wait_ci.sh` for each PR whose checks you were waiting on, sync the live
+  pages. Session time caps and `WAIT_HOURS` count awake time, and a session the computer slept through without
+  progress is no strike.
 - When you've been quiet a while, say in a line what you're doing.
 - Every time a watcher returns, before anything else: sync the live pages and post the attention lines ("Live Pages"
   below). The chat never carries a chain's question itself, only its link.

@@ -120,6 +120,7 @@ def common():
             install=(brew("gh") or "winget install GitHub.cli") + "; then gh auth login (a browser sign-in)",
             who="claude, then the owner signs in")
     launcher()
+    keep_awake()
     if MAC:
         batt = run(["pmset", "-g", "batt"])[1]
         add("power", "unattended runs", "warn" if "Battery Power" in batt else "ok",
@@ -177,6 +178,24 @@ def launcher():
             fallback="GNU screen (ships with macOS) runs it detached instead (watch: screen -r <name>)", install=brew("tmux"), who="claude")
     else:
         add("tmux", "launch.sh: runs the loop detached", "missing", "neither tmux nor screen", install=brew("tmux"), who="claude")
+
+
+def keep_awake():
+    """What keeps the computer awake under the loops (launch.sh) and the orchestrator's watchers (platform.sh)."""
+    need = "keeping the computer awake under loops and watchers"
+    lid = "keep a laptop's lid open: a closed lid still sleeps it"
+    if MAC and "Battery Power" in run(["pmset", "-g", "batt"])[1]:
+        add("keep awake", need, "warn", "on battery: launch.sh refuses to start a loop, and a sleep stalls the run",
+            fallback="plug the Mac in (or ALLOW_BATTERY=1, keeping it awake yourself); " + lid, who="owner")
+    elif MAC:
+        add("keep awake", need, "ok", "caffeinate, on mains power; " + lid)
+    elif WIN and (shutil.which("powershell.exe") or shutil.which("powershell")):
+        add("keep awake", need, "ok", "keep_awake.ps1; " + lid)
+    elif not WIN and shutil.which("systemd-inhibit"):
+        add("keep awake", need, "ok", "systemd-inhibit; " + lid)
+    else:
+        add("keep awake", need, "warn", "nothing here can hold the computer awake, so a sleep stalls the run",
+            fallback="turn off automatic sleep in the system's power settings for the run", who="owner")
 
 
 # ---------------------------------------------------------------- fix runs

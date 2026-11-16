@@ -4,19 +4,22 @@
 #   launch.sh <name> <run>/start.sh [args...]         e.g.  launch.sh "fix-qb wave1" /c/w/qb/start.sh queue-wave1.txt 3
 # macOS / Linux: a detached tmux session (watch: tmux attach -t <name>; leave it again with Ctrl-b d), else a detached
 #   GNU screen session (ships with macOS). On macOS it runs under `caffeinate -is` so the Mac doesn't sleep under it, and
-#   it is refused on battery, where caffeinate can't keep the Mac awake (ALLOW_BATTERY=1 overrides). The lid stays open.
-# Windows (Git Bash): a minimised mintty window, the launch SKILL.md has always used.
+#   it is refused on battery, where caffeinate can't keep the Mac awake (ALLOW_BATTERY=1 overrides). On Linux it runs
+#   under `systemd-inhibit` where systemd has it.
+# Windows (Git Bash): a minimised mintty window, the launch SKILL.md has always used, kept awake by keep_awake.ps1.
+# A laptop's lid stays open on every platform: a closed lid sleeps it whatever holds it awake.
 # Right after it, the orchestrator arms the watcher (wait_verify.sh / wait_chain.sh) as a background task.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/platform.sh"
-[ $# -ge 2 ] || { sed -n '2,10p' "$0"; exit 2; }
+[ $# -ge 2 ] || { sed -n '2,12p' "$0"; exit 2; }
 title="$1"; script="$2"; shift 2
 [ -f "$script" ] || { echo "no such script: $script"; exit 2; }
 script="$(cd "$(dirname "$script")" && pwd)/$(basename "$script")"
 
 if [ "$PLATFORM" = windows ]; then
     mintty -w min -t "$title" /usr/bin/bash -l "$script" "$@" &
+    keep_awake $! "MetaLoop loop: $title"
     echo "started in a minimised mintty window: $title"
     exit 0
 fi
@@ -30,6 +33,8 @@ if [ "$PLATFORM" = mac ]; then
         exit 3
     fi
     wake=(caffeinate -is)
+elif command -v systemd-inhibit >/dev/null 2>&1 && [ "${METALOOP_KEEP_AWAKE:-1}" != 0 ]; then
+    wake=(systemd-inhibit --what=idle:sleep --who=MetaLoop "--why=MetaLoop loop: $title" --mode=block)
 fi
 # PATH goes in explicitly: a tmux server started earlier keeps the environment it was started with. Plain `bash`, not
 # `bash -l`: a macOS login shell runs path_helper, which moves Homebrew's bin to the end of PATH.
