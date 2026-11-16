@@ -31,6 +31,58 @@ platform_notify() {
     esac
 }
 
+# Keep the computer from sleeping for as long as process <pid> runs; the hold ends with it. macOS: caffeinate (idle
+# sleep always, system sleep too on mains power). Linux: systemd-inhibit, where systemd has it. Windows: keep_awake.ps1
+# (SetThreadExecutionState). A closed laptop lid still sleeps the computer. Never fails, never waits.
+keep_awake() {  # <pid> [why]
+    local pid="$1" why="${2:-a MetaLoop run is working}" wpid
+    [ "${METALOOP_KEEP_AWAKE:-1}" = 0 ] && return 0
+    case "$PLATFORM" in
+        mac) caffeinate -is -w "$pid" >/dev/null 2>&1 & ;;
+        windows) wpid=$(cat "/proc/$pid/winpid" 2>/dev/null) || return 0
+                 powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass \
+                     -File "$(cygpath -w "$PLATFORM_HERE/keep_awake.ps1")" "$wpid" >/dev/null 2>&1 & ;;
+        *) if can_inhibit; then
+               systemd-inhibit --what=idle:sleep --who=MetaLoop --why="$why" --mode=block \
+                   sh -c 'while kill -0 "$1" 2>/dev/null; do sleep 20; done' sh "$pid" >/dev/null 2>&1 &
+           fi ;;
+    esac
+    return 0
+}
+
+# Linux: whether systemd-inhibit is here and may take a sleep hold (a container, an SSH login or a CI runner may have
+# the command and be refused the hold). A loop is never wrapped in a hold that would stop it from starting.
+can_inhibit() {
+    command -v systemd-inhibit >/dev/null 2>&1 &&
+        systemd-inhibit --what=idle:sleep --who=MetaLoop --why="checking" --mode=block true >/dev/null 2>&1
+}
+
+# Sleep <secs>, then set SLEPT to how long the computer was asleep (or suspended) on top of that: 0 below
+# SLEEP_GAP_SECS (120), which is scheduling noise. A watcher reports a sleep, so whoever it wakes re-checks everything.
+nap() {  # <secs>
+    local t0; t0=$(date +%s)
+    sleep "$1"
+    SLEPT=$(( $(date +%s) - t0 - $1 ))
+    [ "$SLEPT" -ge "${SLEEP_GAP_SECS:-120}" ] || SLEPT=0
+}
+
+# Seconds the computer has been awake, from an arbitrary start: Python's monotonic clock, which stops while macOS or
+# Linux sleeps. Wall-clock time minus this across a stretch is how long the computer slept in it.
+awake_secs() { "$PYTHON" -c 'import time; print(int(time.monotonic()))' 2>/dev/null || date +%s; }
+
+# awake_mark starts a stretch; slept_since prints how long the computer slept during it (0 under SLEEP_GAP_SECS).
+awake_mark() { MARK_WALL=$(date +%s); MARK_AWAKE=$(awake_secs); }
+slept_since() {
+    local s=$(( $(date +%s) - MARK_WALL - ($(awake_secs) - MARK_AWAKE) ))
+    [ "$s" -ge "${SLEEP_GAP_SECS:-120}" ] || s=0
+    echo "$s"
+}
+
+# A duration for a log line: 2h 05m, or 14m.
+duration() {  # <secs>
+    if [ "$1" -ge 3600 ]; then printf '%dh %02dm' $(($1 / 3600)) $(($1 % 3600 / 60)); else printf '%dm' $((($1 + 59) / 60)); fi
+}
+
 # The PID listening on a TCP port, or nothing. (BSD netstat has no -o, so on macOS the Windows form always said "free".)
 port_pid() {
     if [ "$PLATFORM" = windows ]; then

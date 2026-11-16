@@ -135,7 +135,8 @@ How `agent_run.py` keeps the non-negotiables on agents without Claude Code's hoo
 - **The pin.** Claude Code's preflight checks every model a call used and the window. Other agents are checked with the
   session's own flags, so a flag the installed CLI doesn't know fails the preflight, not the run; the model is checked
   where the agent reports one (Antigravity, Gemini CLI, Cursor), and otherwise the flag is the pin.
-- **Runaways.** `SESSION_TIMEOUT_MIN` (300) ends any session; `BUDGET_PER_SESSION` is enforced by Claude Code only.
+- **Runaways.** `SESSION_TIMEOUT_MIN` (300 minutes of awake time) ends any session; `BUDGET_PER_SESSION` is enforced
+  by Claude Code only.
 - **The rules.** Claude Code gets the runbook as its system prompt; every other agent gets it ahead of the task, with a
   short note on what differs for it (`/security-review` is done by hand, no subagents, the guard rails).
 

@@ -75,6 +75,12 @@ Each entry is a failure seen in a real run. Symptom → cause → fix.
   test accounts go with them. → The verify loop's services keep their data in a `persist` folder under `~/.metaloop/`.
 - **An unattended run stopped overnight.** → The Mac slept. → `launch.sh` runs loops under `caffeinate -is` and refuses
   on battery, where caffeinate can't hold the Mac awake. A closed lid still sleeps it.
+- **Chains and PR checks went unwatched once the loops ended, and the computer slept.** → Only the loops held it awake;
+  the orchestrator's watchers didn't, and the desktop app's own keep-awake lets go once the session goes idle. On
+  waking, wall-clock timeouts fired at once: a session killed as a runaway, a watcher reporting TIMEOUT. → Every watcher
+  holds the computer awake while it waits (`keep_awake` in `platform.sh`, on macOS, Linux and Windows), session caps and
+  `WAIT_HOURS` count awake time, a watcher returns with `the computer slept for <time>` so the orchestrator re-checks,
+  and a session slept through without progress is no strike.
 
 ## The verify stack
 

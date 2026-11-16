@@ -186,8 +186,10 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
   the queue>`, publish each with the capabilities it prints, `live_page.py --url <slug> <url>`, then `live_sync.py --all`
   and write each page's writes (`ArtifactData` batch), `live_sync.py --all --done`.
 - `<run>/launch.sh "fix-<name> wave1" <run>/start.sh queue-wave1.txt 5`. Arm `wait_chain.sh`: it returns when a chain
-  ends or asks, and every `LIVE_SYNC_MIN` minutes with progress. Each time: sync the pages, then post exactly the lines
-  `live_sync.py --attention` prints. Relay each answer from a page with `task.py answer` (requeue a stopped chain).
+  ends or asks, and every `LIVE_SYNC_MIN` minutes with progress. Loops and watchers keep the computer awake; a closed
+  lid still sleeps a laptop, so tell the owner to keep it open and plugged in. Each time: sync the pages, then post
+  exactly the lines `live_sync.py --attention` prints. Relay each answer from a page with `task.py answer` (requeue a
+  stopped chain).
 - Each chain ends `awaiting_owner` with a PR, green CI and its review comments as proposals.
 
 ### 4. Design the gated waves

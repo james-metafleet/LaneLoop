@@ -164,9 +164,11 @@ while :; do
     log "session $n start: $remaining left"
     # agent_run.py starts the verify pin's agent with the runbook, the settings and the Chrome MCP, keeps its context in
     # bounds and prints the session's result line.
+    awake_mark
     res=$("$PYTHON" agent_run.py session verify --prompt "$prompt" --system runbook.md --settings settings.json \
         --mcp mcp.json --log "logs/session-$n.jsonl" --err "logs/session-$n.err")
     rc=$?
+    slept=$(slept_since)   # the computer slept during the session: its calls may have failed, through no fault of its own
     IFS='|' read -r sub cost turns apierr text <<< "$res"
     [ "$sub" = agent_missing ] && die "$text"   # the verify pin's agent isn't installed: not a session, not a strike
     if [ "$apierr" = usage_limit_reached ] || [ "$apierr" = rate_limit_error ]; then
@@ -189,7 +191,7 @@ while :; do
     [ -f state/last_stop.json ] && kind=$("$PYTHON" -c "import json; print(json.load(open('state/last_stop.json')).get('kind', ''))")
     last_end="${kind:-$sub}"
     "$PYTHON" ledger.py session "$n" "$last_end" "$cost" "$turns" >/dev/null
-    log "session $n end: $last_end · \$$cost · $turns turns · rc=$rc · $("$PYTHON" ledger.py summary --short)"
+    log "session $n end: $last_end · \$$cost · $turns turns · rc=$rc · $("$PYTHON" ledger.py summary --short)$([ "$slept" -gt 0 ] && echo " · the computer slept $(duration "$slept")")"
     case "$kind" in
         wrong-model|guard-error) die "session $n was stopped by the guard ($kind); see state/last_stop.json and logs/ctx.log" ;;
     esac
@@ -199,6 +201,8 @@ while :; do
     fp_after=$("$PYTHON" ledger.py fingerprint)
     if [ -f PAUSED.md ] || [ "${fp_after%%:*}" != "${fp_before%%:*}" ]; then
         strikes=0; soft=0
+    elif [ "$fp_after" = "$fp_before" ] && [ "$slept" -gt 0 ]; then
+        log "no ledger progress in session $n, but the computer slept for $(duration "$slept") during it: not a strike"
     elif [ "$fp_after" = "$fp_before" ]; then
         strikes=$((strikes + 1)); log "no ledger progress in session $n (strike $strikes of 2)"
         [ "$strikes" -ge 2 ] && die "two sessions in a row made no progress"

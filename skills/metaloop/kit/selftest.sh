@@ -557,6 +557,52 @@ check "no chain event, but a chain's state changed: it returns after LIVE_SYNC_S
     sh -c "grep -q 'progress' '$T/wc2.out' && grep -q 'lp' '$T/wc2.out'"
 check "... handing back the same from-line, so a stop logged meanwhile is still read next time" grep -qx "== next from-line: $n1" "$T/wc2.out"
 
+echo "== sleep: watchers keep the computer awake, and say so when it slept anyway"
+# A stand-in date whose wall clock jumps by the seconds in $T/skew: a computer that slept that long (Python's monotonic
+# clock, the awake clock, doesn't move)
+FAKECLOCK="$T/fakeclock"; mkdir -p "$FAKECLOCK"; REALDATE=$(command -v date); echo 0 > "$T/skew"
+cat > "$FAKECLOCK/date" <<EOF
+#!/bin/sh
+if [ "\$1" = +%s ]; then echo \$(( \$("$REALDATE" +%s) + \$(cat "$T/skew") )); else exec "$REALDATE" "\$@"; fi
+EOF
+chmod +x "$FAKECLOCK/date"
+n2=$(wc -l < "$T/fix/logs/runner.log")
+( cd "$T/fix" && PATH="$FAKECLOCK:$PATH" WAIT_POLL_SECS=1 LIVE_SYNC_SECS=0 WAIT_HOURS=8 ./wait_chain.sh "$n2" > "$T/wc3.out" 2>&1 ) & r=$!
+sleep 2; echo 32400 > "$T/skew"   # nine hours go by at once: past WAIT_HOURS, had the limit counted the wall clock
+wait_for 20 sh -c "! kill -0 $r"; kill $r 2>/dev/null; echo 0 > "$T/skew"
+check "wait_chain: the computer slept, so it returns on waking, says for how long, and hands back the same from-line" \
+    sh -c "grep -q 'the computer slept for 9h 00m' '$T/wc3.out' && grep -qx '== next from-line: $n2' '$T/wc3.out'"
+check "... a sleep longer than WAIT_HOURS is no timeout: the limit counts awake time" sh -c "! grep -q TIMEOUT '$T/wc3.out'"
+s=$(PATH="$FAKECLOCK:$PATH" bash -c "source '$T/fix/platform.sh'; awake_mark; echo 5400 > '$T/skew'; slept_since")
+echo 0 > "$T/skew"
+check "slept_since: the wall clock ran 1h 30m ahead of the awake clock, so the computer slept that long ($s s)" \
+    sh -c "[ '$s' -ge 5390 ] && [ '$s' -le 5410 ]"
+check "slept_since: a stretch the computer was awake through is 0" \
+    test "$(PATH="$FAKECLOCK:$PATH" bash -c "source '$T/fix/platform.sh'; awake_mark; sleep 1; slept_since")" = 0
+check "duration reads as a log line wants it" \
+    test "$(bash -c "source '$T/fix/platform.sh'; duration 7500; echo; duration 840")" = "$(printf '2h 05m\n14m')"
+check "every watcher keeps the computer awake while it waits" \
+    sh -c "for f in fix/wait_chain.sh fix/wait_gate.sh fix/wait_ci.sh verify/wait_verify.sh; do grep -q 'keep_awake \\\$\\\$' \"$KIT/\$f\" || exit 1; done"
+check "a session the computer slept through is no strike, in the fix chains and the verify loop" \
+    sh -c "grep -q 'awake_mark' '$KIT/fix/fixloop.sh' && grep -q 'not a strike' '$KIT/fix/fixloop.sh' && grep -q 'awake_mark' '$KIT/verify/qa-loop.sh' && grep -q 'not a strike' '$KIT/verify/qa-loop.sh'"
+check "a session's time cap counts awake time" grep -q "time.monotonic() > deadline" "$KIT/common/agent_run.py"
+if [ "$(uname -s)" = Darwin ]; then
+    cat > "$T/held.sh" <<EOF
+#!/usr/bin/env bash
+source "$T/fix/platform.sh"; keep_awake \$\$ selftest
+n=0; for _ in 1 2 3 4 5 6 7 8 9 10; do
+    c=\$(pgrep -f "caffeinate -is -w \$\$" | head -n 1)
+    [ -n "\$c" ] && n=\$(pmset -g assertions 2>/dev/null | grep -c "pid \$c(caffeinate)"); [ "\$n" -ge 1 ] && break; sleep 0.5
+done
+echo "\$n \$\$" > "$T/held"
+EOF
+    bash "$T/held.sh"
+    check "keep_awake: caffeinate holds a no-sleep assertion while the process runs" sh -c "[ \$(cut -d' ' -f1 '$T/held') -ge 1 ]"
+    check "... and lets go once it ends" wait_for 10 sh -c "! pgrep -f 'caffeinate -is -w $(cut -d' ' -f2 "$T/held")'"
+else
+    skip "keep_awake's hold: macOS only here (systemd-inhibit on Linux, keep_awake.ps1 on Windows)"
+fi
+
 echo "== platform helpers"
 p=$(free_port)
 "$PY" "$STUBS/st_serve.py" "$p" >/dev/null 2>&1 &
@@ -714,6 +760,12 @@ sleep 2; echo "[11-07 15:11:00] T2 step 2" >> "$T/ver/logs/loop.log"; touch "$T/
 wait_for 30 sh -c "! kill -0 $r"; kill $r 2>/dev/null
 check "wait_verify: a progress return hands back the same from-line, so a stop logged meanwhile is still read" \
     sh -c "grep -q 'progress' '$T/wv.out' && grep -qx '== next from-line: $v0' '$T/wv.out'"
+v1=$(wc -l < "$T/ver/logs/loop.log")
+( cd "$T/ver" && PATH="$FAKECLOCK:$PATH" WAIT_POLL_SECS=1 LIVE_SYNC_SECS=0 ./wait_verify.sh "$v1" > "$T/wv2.out" 2>&1 ) & r=$!
+sleep 2; echo 3000 > "$T/skew"
+wait_for 20 sh -c "! kill -0 $r"; kill $r 2>/dev/null; echo 0 > "$T/skew"
+check "wait_verify: the computer slept, so it returns on waking with the same from-line" \
+    sh -c "grep -q 'the computer slept for 50m' '$T/wv2.out' && grep -qx '== next from-line: $v1' '$T/wv2.out'"
 
 echo "== the verify loop's services: kept, seeded once, reused"
 sv() { (cd "$T/ver" && "$PY" services.py "$@" --state state) 2>"$T/sv.err"; }
@@ -793,6 +845,14 @@ EOF
     check "the script ran detached ($(head -c 80 "$T/launch.out"))" wait_for 10 test -s "$T/launched"
     [ "$(uname -s)" = Darwin ] && check "kept awake: caffeinate holds a no-sleep assertion for it" \
         sh -c "[ \"\$(sed -n 2p '$T/launched')\" -ge 1 ]"
+    if [ "$(uname -s)" = Linux ]; then
+        # systemd-inhibit present but refused the hold (a container, an SSH login, a CI runner): the loop starts anyway
+        mkdir -p "$T/noinhibit"; printf '#!/bin/sh\necho "Failed to inhibit: Access denied" >&2\nexit 1\n' > "$T/noinhibit/systemd-inhibit"
+        chmod +x "$T/noinhibit/systemd-inhibit"; rm -f "$T/launched"
+        tmux kill-session -t "=$TMUX_NAME" 2>/dev/null; screen -S "$TMUX_NAME" -X quit 2>/dev/null
+        PATH="$T/noinhibit:$PATH" bash "$T/fix/launch.sh" "$TMUX_NAME" "$T/hello.sh" > "$T/launch2.out" 2>&1
+        check "a systemd-inhibit that refuses the hold doesn't stop the loop from starting" wait_for 10 test -s "$T/launched"
+    fi
 else
     skip "launch.sh: no tmux or screen (or Windows, where it opens mintty)"
 fi
