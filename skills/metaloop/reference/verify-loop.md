@@ -39,9 +39,10 @@ Whatever the project is built with, the project profile's `verify` section says 
 
 ## A session
 
-The wrapper (`qa-loop.sh`) starts each session with `claude -p` on the pinned model, the runbook appended to the
-system prompt, `settings.json` (permissions and hooks), `mcp.json`, `--permission-mode dontAsk`, no subagents, a budget
-cap, and the prompt on stdin: the ledger summary, the previous `HANDOFF.md`, and the guard's stop record if the last
+The wrapper (`qa-loop.sh`) starts each session through `agent_run.py` on the crew's verify pin, with the runbook (as
+the system prompt on Claude Code, ahead of the task elsewhere), `settings.json` (permissions and hooks; guard rails on
+other agents), `mcp.json` (the Chrome DevTools MCP, in each agent's own config), no subagents, a budget cap, and the
+prompt: the ledger summary, the previous `HANDOFF.md`, and the guard's stop record if the last
 session was force-stopped. It stops the run after two sessions in a row that change nothing in the ledger, or four
 that only add notes (no test moved on).
 

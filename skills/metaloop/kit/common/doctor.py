@@ -61,10 +61,43 @@ def ram_gb():
 
 
 # ---------------------------------------------------------------- every run
+def agents():
+    """Every coding agent the run's crew pins: the roles its sessions play must have theirs; research (consult.py) is
+    optional: without its agent the orchestrator researches itself."""
+    import crew
+    reg = crew.registry()
+    pins = {r: CONF[f"{r.upper()}_PIN"] for r in crew.ROLES if CONF.get(f"{r.upper()}_PIN")}
+    need = ("verify",) if KIND == "verify" else ("plan", "code")
+    by_agent = {}
+    for r, pin in pins.items():
+        try:
+            by_agent.setdefault(crew.parse(pin)["agent"], []).append(r)
+        except crew.PinError as e:
+            add(f"{r} pin", f"{r} sessions", "missing", str(e), install=f"crew.py set {r}=<agent/model[:effort]>", who="claude")
+    for a, roles in sorted(by_agent.items()):
+        info = reg["agents"][a]
+        exe = os.environ.get(f"METALOOP_BIN_{a.upper()}") or info["bin"]
+        v = run([exe, "--version"])
+        used = ", ".join(roles)
+        required = any(r in need for r in roles)
+        if v[0] == 0:
+            add(f"{info['name']} ({exe})", f"{used} sessions", "ok",
+                f"{v[1][:60]} (installed; the preflight checks it is signed in)")
+        elif required:
+            alt = crew.first_runnable()
+            add(f"{info['name']} ({exe})", f"{used} sessions", "missing", "not on PATH",
+                fallback=f"give {used} an agent this machine has: crew.py set {roles[0]}=<pin>"
+                         + (f", or crew.py use {alt} (the first crew this machine can run)" if alt else ""),
+                install=f"{info['install']}; then {info['sign_in']}", who=info.get("who", "owner"),
+                ask=f"crew.py set {roles[0]}=<an installed agent's pin>" + (f" or crew.py use {alt}" if alt else ""))
+        else:
+            add(f"{info['name']} ({exe})", f"{used} questions (consult.py)", "fallback", "not on PATH",
+                fallback="the orchestrator researches with its own tools; or crew.py set research=<an installed agent's pin>",
+                install=f"{info['install']}; then {info['sign_in']}", who=info.get("who", "owner"))
+
+
 def common():
-    v = run(["claude", "--version"])
-    add("claude CLI", "every session", "ok" if v[0] == 0 else "missing", v[1][:60] if v[0] == 0 else "not on PATH",
-        install="npm install -g @anthropic-ai/claude-code; then sign in with `claude`", who="claude")
+    agents()
     add("git", "worktrees, branches", "ok" if shutil.which("git") else "missing",
         install="xcode-select --install (a dialog)" if MAC else "install Git for Windows", who="owner")
     py = CONF.get("PYTHON", "python")

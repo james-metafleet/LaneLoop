@@ -6,7 +6,22 @@ project's own commands, services and tools come from its profile, `.metaloop/pro
 ([reference/project.md](../reference/project.md)), which `init_project.py` writes from the presets in `presets/`.
 
 `<kit>` below is this folder. Installed as a plugin, it is in Claude Code's plugin cache and the skill gives Claude its
-path (`${CLAUDE_SKILL_DIR}/kit`); in a clone of the MetaLoop repository it is `skills/metaloop/kit`.
+path (`${CLAUDE_SKILL_DIR}/kit`); installed for another agent (`install.sh`), it is the `kit` folder beside the skill's
+`SKILL.md`; in a clone of the MetaLoop repository it is `skills/metaloop/kit`.
+
+## The crew
+
+Every session runs on its role's pin, `agent/model[:effort]`: research, plan, code, verify, each on any agent the kit
+drives (Claude Code, Codex, Antigravity, Gemini CLI, Grok Build, OpenCode, Cursor). Pick a ready-made crew from
+`crews/` and override single roles; [reference/crew.md](../reference/crew.md) has the presets, the benchmarks behind
+them and what each agent supports.
+
+```bash
+python3 <kit>/common/crew.py presets                 # the ready-made crews, role by role, with why
+python3 <kit>/common/crew.py use mixed               # this repository's crew (.metaloop/crew.json; commit it)
+python3 <kit>/common/crew.py set plan=codex/gpt-6-astra:xhigh
+python3 <kit>/common/crew.py check                   # agents installed, pins answering
+```
 
 ## The project profile
 
@@ -52,9 +67,11 @@ cd /c/w/<name> && python doctor.py && ./preflight.sh  # doctor exits 0, prefligh
 Settings live in `loop.conf` / `loop.json` (re-run `init_run.py` with `KEY=VALUE` to change them: every other setting,
 hand edits to `loop.conf` included, and the run's state are kept, and a rendered `runbook.md` or `settings.json` you
 edited by hand is kept too, with the new render beside it as `<name>.new`).
-Defaults: code on Opus 5.5 1M at high (`MODEL`, `MODEL_ARG`, `EFFORT`), plan on Opus 5.5 1M at xhigh (`PLAN_MODEL`,
-`PLAN_MODEL_ARG`, `PLAN_EFFORT`: a design branch's sessions until its sign-off), the verify loop on Opus 5.5 1M at xhigh,
-hand-off at 65%, stop at 72%, $150 per session, 10 sessions per chain, 5 chains at once
+Defaults: the repository's crew (`.metaloop/crew.json`), else the `claude` crew: research and code on Opus 5.5 1M at
+high, plan (a design branch's sessions until its sign-off) and verify at xhigh (`CREW`, `RESEARCH_PIN`, `PLAN_PIN`,
+`CODE_PIN`, `VERIFY_PIN`; the old `MODEL_ARG`/`EFFORT` and `PLAN_MODEL_ARG`/`PLAN_EFFORT` still set the main and plan
+pins), hand-off at 65%, stop at 72%, $150 per session (Claude Code), 300 minutes per session (any agent,
+`SESSION_TIMEOUT_MIN`), Codex in its workspace sandbox (`CODEX_SANDBOX`), 10 sessions per chain, 5 chains at once
 (on macOS and Linux, one per 8 GB of memory, at most 5), base: the repository's default branch, branches
 `ai-work/<SLUG_PREFIX><slug>`,
 worktrees in `<run>-wt/`, live pages synced at least every 10 minutes (`LIVE_SYNC_MIN`).
@@ -77,10 +94,14 @@ Machine fallbacks (doctor.py says when each applies):
 | File | What |
 |---|---|
 | `doctor.py [--json]` | Every dependency: ok, fallback, skipped, warn or missing; what the run does without it; the install and who runs it. Installs nothing. |
-| `preflight.sh [plan]` | Prints `ok` when a one-line `claude -p` call reports only the pinned model, window and effort (the code pin, or with `plan` the plan pin). |
+| `preflight.sh [role]` | Prints `ok` when a one-line call on the role's pin answers as that pin (default: code for a fix run, verify for a verify run). On Claude Code: only the pinned model, on its window, background calls included. |
+| `crew.py` | The crew: `presets`, `use <preset>`, `set <role>=<pin>`, `models`, `check`; in a repository it writes `.metaloop/crew.json`, in a run folder `loop.conf`. |
+| `agent_run.py session\|preflight\|argv\|pin` | Runs one session on a role's pin, on any agent: its command line, the runbook, the context guard (the hook on Claude Code, the event stream elsewhere), the guard-rail shims for git and gh, the end gate, the result line. `argv` shows the command without running it. |
+| `consult.py <role> <name> "<question>"` | A read-only question to a role's pin (research, or plan for reviews), answered in `consults/<name>.md`; `--batch` runs many at once. |
+| `agents.json` | The agents the kit drives and the models it knows: windows, efforts, prices, dated benchmark notes. |
 | `launch.sh <name> <start.sh> [args]` | Starts a loop without taking focus: minimised mintty (Windows), detached tmux or screen under caffeinate (macOS). |
 | `platform.sh` | Sourced by every shell script: the Windows calls (cygpath, toasts, netstat, taskkill, PowerShell) and their macOS / Linux equivalents. |
-| `ctx_guard.py`, `session_result.py`, `notify.ps1` | The context and model guard; a session's result line; the Windows toast. |
+| `ctx_guard.py`, `session_result.py`, `notify.ps1` | Claude Code's context and model guard (a hook); a Claude Code session log's result line; the Windows toast. |
 | `live_page.py`, `live_page.html` | A chain's (or the verify run's) live page, written to `live/<slug>.live.html` in the run folder, never committed (the repo ignores `*.live.html`); `--url` records where it was published. It draws itself from its own database. |
 | `live_sync.py` | The writes that keep each live page current (state, lines, questions, review items), for the main session's ArtifactData batch; `--done` once written; `--attention` prints the main window's one line per thing a page needs, with its link. |
 | `two_way.js` | Shared by the live pages and the plan page: Ask Claude (Send to Claude), and Claude's answers from the page's `replies`. |

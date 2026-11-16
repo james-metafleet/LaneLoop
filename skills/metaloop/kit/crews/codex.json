@@ -1,0 +1,13 @@
+{
+ "name": "codex",
+ "group": "one agent",
+ "about": "Every role on OpenAI's Codex CLI.",
+ "research": "codex/gpt-6.1-sol:high",
+ "plan": "codex/gpt-6-astra:xhigh",
+ "code": "codex/gpt-6-astra:xhigh",
+ "verify": "codex/gpt-6-astra:high",
+ "why": {
+  "all": "GPT-6 Astra at xhigh is second on SlopCodeBench with the cleanest code; GPT-6.1 Sol is the cheaper reader."
+ },
+ "as_of": "2026-11-16"
+}

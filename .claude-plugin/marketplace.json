@@ -1,6 +1,6 @@
 {
   "name": "metaloop",
-  "description": "MetaLoop for Claude Code: spec-first, parallel, context-efficient engineering loops.",
+  "description": "MetaLoop: spec-first, parallel, context-efficient engineering loops on any mix of coding agents and models.",
   "owner": {
     "name": "jomitiron",
     "url": "https://github.com/jomitiron"
@@ -9,7 +9,7 @@
     {
       "name": "metaloop",
       "source": "./",
-      "description": "Run large engineering work as unattended Claude Code loops with owner gates: plan with Google's EGM, fan out parallel fix chains in git worktrees, and live-verify the app end to end."
+      "description": "Run large engineering work as unattended coding-agent loops with owner gates: plan with Google's EGM, fan out parallel fix chains in git worktrees, live-verify the app end to end, with any agent and model per role."
     }
   ]
 }

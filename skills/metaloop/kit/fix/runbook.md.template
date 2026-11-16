@@ -69,8 +69,8 @@ Run task.py and gate.py with these exact paths (they are allow-listed): `{{PYTHO
    tests added, docs touched, what to re-verify after merge, and links to the plan and results pages as extra context
    only. If the gate left a step out (GATE_SKIP), the body says so in a "Not checked locally" line naming the step and
    what checks it instead (the gate's status prints the step's note). End it with
-   `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Commit messages end with
-   `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`. If the repository's instructions ask for
+   `{{PR_FOOTER}}`. Commit messages end with
+   `{{COMMIT_TRAILER}}`. If the repository's instructions ask for
    anything alongside a PR (a changelog entry, a tracking file), add it, commit and push. `task.py pr <N> <url>`.
 7. **ci**: poll `gh pr checks <N>` (with `task.py wait 300`) until checks settle or ~45 minutes pass. A check that fails in
    2 to 3 s with zero steps is a GitHub Actions budget block, not your code: note it. A review bot that "passes" in seconds

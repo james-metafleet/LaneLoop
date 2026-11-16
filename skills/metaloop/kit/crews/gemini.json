@@ -1,0 +1,13 @@
+{
+ "name": "gemini",
+ "group": "one agent",
+ "about": "Every role on Google's Antigravity CLI (agy) with Gemini 4 Carbon.",
+ "research": "agy/gemini-4-carbon:high",
+ "plan": "agy/gemini-4-carbon:xhigh",
+ "code": "agy/gemini-4-carbon:high",
+ "verify": "agy/gemini-4-carbon:xhigh",
+ "why": {
+  "all": "Gemini 4 Carbon is third on Terminal-Bench 4.1 (64.6%) at about 30% of Opus 5.5's run cost; it has no SlopCodeBench result yet."
+ },
+ "as_of": "2026-11-16"
+}

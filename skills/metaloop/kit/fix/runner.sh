@@ -2,7 +2,7 @@
 # Runs the branches listed in a queue file as parallel chains, MAX_PAR at a time; starts the next as one ends.
 # Every chain end (and the runner's own end) is written to logs/runner.log and raised as a toast.
 #   QUEUE=queue.txt MAX_PAR=5 ./runner.sh          (start.sh opens it in its own window)
-#   ./runner.sh --preflight-only                   check both model pins and stop
+#   ./runner.sh --preflight-only                   check the code and plan pins and stop
 # Plain bash 3.2 (macOS's): no mapfile, no associative arrays.
 set -u
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,8 +18,8 @@ mkdir -p logs locks
 log() { echo "[$(date '+%m-%d %H:%M:%S')] [runner] $*" | tee -a logs/runner.log; }
 notify() { platform_notify "$1" "$2"; }
 
-pf=$(./preflight.sh)
-[ "$pf" = ok ] || { log "STOP: preflight refused: $pf"; notify "Runner stopped" "preflight refused: $pf"; exit 1; }
+pf=$(./preflight.sh code)
+[ "$pf" = ok ] || { log "STOP: code-pin preflight refused ($CODE_PIN): $pf"; notify "Runner stopped" "preflight refused: $pf"; exit 1; }
 Q=()
 while IFS= read -r line; do Q+=("$line"); done < <(grep -v '^#' "$QUEUE" 2>/dev/null | sed 's/\r$//' | grep -v '^$')
 # No branch starts without a signed-off plan: make_briefs.py writes the "Plan signed off:" line only for a plan the owner
@@ -40,10 +40,10 @@ for s in ${Q[@]+"${Q[@]}"}; do
 done
 if [ -n "$plan" ] || [ "${1:-}" = "--preflight-only" ]; then
     pf=$(./preflight.sh plan)
-    [ "$pf" = ok ] || { log "STOP: plan-pin preflight refused: $pf"; notify "Runner stopped" "plan-pin preflight refused: $pf"; exit 1; }
-    plan=" · plan pin $PLAN_MODEL, $PLAN_EFFORT"
+    [ "$pf" = ok ] || { log "STOP: plan-pin preflight refused ($PLAN_PIN): $pf"; notify "Runner stopped" "plan-pin preflight refused: $pf"; exit 1; }
+    plan=" · plan pin $PLAN_PIN"
 fi
-log "preflight ok: $MODEL, $CTX_WINDOW, $EFFORT$plan · MAX_PAR=$MAX_PAR · queue $QUEUE"
+log "preflight ok: code pin $CODE_PIN$plan · MAX_PAR=$MAX_PAR · queue $QUEUE"
 [ "${1:-}" = "--preflight-only" ] && exit 0
 SLUGS=(); PIDS=()   # the running chains: SLUGS[k] runs as PIDS[k]
 

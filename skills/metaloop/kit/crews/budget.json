@@ -1,0 +1,16 @@
+{
+ "name": "budget",
+ "group": "recommended",
+ "about": "Most of the quality for a fraction of the cost: Codex's GPT-6.1 Sol plans and codes, Gemini researches, Sonnet verifies.",
+ "research": "agy/gemini-4-carbon:medium",
+ "plan": "codex/gpt-6.1-sol:high",
+ "code": "codex/gpt-6.1-sol:medium",
+ "verify": "claude/claude-sonnet-5-5[1m]:high",
+ "why": {
+  "research": "Gemini 4 Carbon at medium: near-leader codebase answers for little.",
+  "plan": "GPT-6.1 Sol at high: 42.5 on FrontierCode 2.0, a few points under the leader at $2/$10.",
+  "code": "GPT-6.1 Sol at medium: 29.1% on SlopCodeBench for $0.91 a checkpoint; 60.9% on Terminal-Bench 4.1 at about a seventh of Opus 5.5's run cost.",
+  "verify": "Sonnet 5.5 at high: 63.9% on Terminal-Bench 4.1 at half Opus 5.5's price."
+ },
+ "as_of": "2026-11-16"
+}

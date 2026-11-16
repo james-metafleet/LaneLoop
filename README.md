@@ -1,17 +1,53 @@
 # MetaLoop
 
-A Claude Code skill for running large engineering work as loops of fresh, headless sessions: spec engineering up
+A skill for running large engineering work as loops of fresh, headless coding-agent sessions: spec engineering up
 front, parallel execution in isolated worktrees, and every session kept well inside its context window, with the owner
-deciding at fixed gates.
+deciding at fixed gates. Each kind of work can run on a different agent and model: research on Gemini, planning on
+Codex, coding on Claude, or any mix you choose.
 
 - **Spec first.** Nothing is built before a plan the owner signed off: every branch broken into tasks, each with the
   test that proves it.
-- **Parallel.** Each branch is its own chain of `claude -p` sessions in its own git worktree, five at a time by default,
+- **Any agent, per role.** A run's **crew** pins an agent, model and effort for each role: research, plan, code,
+  verify. Claude Code, Codex, Antigravity, Gemini CLI, Grok Build, OpenCode (any provider's model) and Cursor are all
+  driven the same way. Ready-made crews come from current benchmarks, SlopCodeBench among them.
+- **Parallel.** Each branch is its own chain of headless sessions in its own git worktree, five at a time by default,
   each with a live page where the owner sees its progress and answers its questions.
-- **Context-efficient.** A guard hook hands a session off at 65% of its window and stops it at 72%; sessions hand over
-  through files, never memory, so every session starts sharp.
+- **Context-efficient.** A guard hands a session off at 65% of its window and stops it at 72%, on every agent: a hook in
+  Claude Code, the session's event stream elsewhere. Sessions hand over through files, never memory, so every session
+  starts sharp.
 - **Any stack.** Nothing in MetaLoop knows a language, framework or database. A project describes itself in one file,
   `.metaloop/project.json`: how it builds and tests, which services its checks need, how its app is served.
+
+## The crew
+
+| Role | Does |
+|---|---|
+| research | Answers questions read-only, many at once, each in a file (`consult.py`). |
+| plan | Design branches (mockups, schema pages) and plan reviews. |
+| code | The fix chains: failing test, fix, docs, gate, security review, PR, CI. |
+| verify | The live-verify loop against the running app. |
+
+Pick a ready-made crew, then change any role. A pin is `agent/model[:effort]`:
+
+```bash
+python3 <kit>/common/crew.py presets                    # the crews, role by role, and why; which are ready here
+python3 <kit>/common/crew.py use auto                   # the first recommended crew this machine can run
+python3 <kit>/common/crew.py use mixed                  # writes .metaloop/crew.json: commit it
+python3 <kit>/common/crew.py set plan=codex/gpt-6-astra:xhigh code=claude/claude-opus-5-5[1m]:high
+python3 <kit>/common/crew.py check                      # each agent installed, each pin answering
+```
+
+| Crew | research | plan | code | verify |
+|---|---|---|---|---|
+| **frontier**: the best measured model per role | Opus 5.5 | Fable 5.2 | Opus 5.5 | Opus 5.5 |
+| **mixed**: three vendors | Gemini 4 Carbon (agy) | GPT-6 Astra (Codex) | Opus 5.5 | Opus 5.5 |
+| **clean-code**: least slop | Opus 5.5 | Fable 5.2 | GPT-6 Astra (Codex) | Opus 5.5 |
+| **budget** | Gemini 4 Carbon | GPT-6.1 Sol | GPT-6.1 Sol | Sonnet 5.5 |
+| **claude** (the default), **codex**, **gemini**, **grok** | one agent throughout | | | |
+
+[reference/crew.md](skills/metaloop/reference/crew.md) has the benchmarks behind each choice (SlopCodeBench,
+Terminal-Bench 4.1, FrontierCode, LibraryDesignBench, SWE-Atlas-QnA, as of November 2026), what each agent supports, and
+how the context guard, permissions and hand-offs work on agents without Claude Code's hooks.
 
 ## EGM plans, MetaLoop fans out
 
@@ -32,7 +68,8 @@ rounds on the plan page.
 
 ## Layout
 
-This repository is a Claude Code plugin and the marketplace that lists it.
+This repository is a Claude Code plugin and the marketplace that lists it, and a plain Agent Skill folder that any
+other agent can load (`install.sh`).
 
 | Path | What |
 |---|---|
@@ -41,6 +78,9 @@ This repository is a Claude Code plugin and the marketplace that lists it.
 | [skills/metaloop/reference/](skills/metaloop/reference/) | The orchestrator's procedures, the project profile, the fix and verify loops, the EGM hand-off, and pitfalls met in practice. |
 | [skills/metaloop/kit/](skills/metaloop/kit/) | The scripts `init_run.py` copies into a run folder (see [its README](skills/metaloop/kit/README.md)). |
 | [skills/metaloop/kit/presets/](skills/metaloop/kit/presets/) | Ready-made project profiles: stacks, and the databases and services their checks need. |
+| [skills/metaloop/kit/crews/](skills/metaloop/kit/crews/) | Ready-made crews: which agent and model researches, plans, codes and verifies. |
+| [skills/metaloop/kit/common/agents.json](skills/metaloop/kit/common/agents.json) | The agents the kit drives and the models it knows, with dated benchmark notes. |
+| [install.sh](install.sh) | Installs the skill for Codex, Antigravity, Gemini CLI, Grok Build, OpenCode or Cursor. |
 | [evals/](evals/) | Behaviour evals for the skill (`claude plugin eval .`). |
 | [.github/workflows/check.yml](.github/workflows/check.yml) | Validates the plugin and runs the kit's self-test on every pull request. |
 
@@ -60,6 +100,25 @@ For planning with EGM, install Google's plugin too:
 ```bash
 claude plugin install egm --marketplace google/elephant-goldfish-model
 ```
+
+### Other agents
+
+Any agent that loads Agent Skills can orchestrate a run. From a clone of this repository, link the skill into the
+agent's skills folder (`git pull` then updates it):
+
+```bash
+./install.sh codex
+```
+
+`codex` links it into `~/.agents/skills` (Grok Build reads it there too), `agy` and `gemini` into `~/.gemini/skills`,
+`grok` into `~/.grok/skills` (Grok Build also reads Claude Code plugins), `all` into all three. For one repository,
+`./install.sh --project <repo>` puts it in that repository's `.agents/skills`, which Codex, Antigravity, Gemini CLI,
+OpenCode and Cursor all read (`--copy` to commit it for the team).
+
+The agents a run's crew uses for its sessions only need to be installed and signed in: `crew.py check` and the run's
+`doctor.py` say which are missing. Orchestrating from an agent other than Claude Code, the live pages are files the owner
+opens in a browser and answers in the chat, and planning uses the grilling rounds (EGM is a Claude Code plugin); see
+[reference/crew.md](skills/metaloop/reference/crew.md).
 
 ### Keep it up to date
 

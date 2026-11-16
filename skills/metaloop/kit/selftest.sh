@@ -37,12 +37,13 @@ trap cleanup EXIT
 free_port() { "$PY" -c "import socket; s=socket.socket(); s.bind(('127.0.0.1', 0)); print(s.getsockname()[1])"; }
 wait_for() { local n="$1"; shift; for _ in $(seq 1 "$n"); do "$@" >/dev/null 2>&1 && return 0; sleep 1; done; return 1; }
 
-# Stubs. claude: a preflight-shaped reply from the model it was given. st-run: a stand-in build and test command
+# Stubs. claude: a preflight-shaped reply from the model it was given (or SELFTEST_ANSWER_AS). st-run: a stand-in build and test command
 # passing build or suite (or a missing-workload build failure). bash: the bash under test (on macOS /bin/bash is 3.2).
 cat > "$STUBS/claude" <<'EOF'
 #!/usr/bin/env bash
 cat >/dev/null; sleep 1
 m=none; while [ $# -gt 0 ]; do [ "$1" = --model ] && m="${2%"[1m]"}"; shift; done
+m="${SELFTEST_ANSWER_AS:-$m}"
 echo '{"type":"result","result":"READY","modelUsage":{"'"$m"'":{"canonicalModel":"'"$m"'","contextWindow":1000000}}}'
 EOF
 cat > "$STUBS/st-run" <<'EOF'
@@ -155,12 +156,16 @@ chrome=$(sed -n 's/^CHROME=//p' "$T/ver/loop.conf" | tr -d "'")
 if [ -e "$chrome" ] || [ "$WIN" = 1 ]; then check "verify: CHROME points at an installed Chrome" test -e "$chrome"
 else skip "verify: CHROME ($chrome): no Chrome installed"; fi
 
-echo "== model pins: code on Opus 5.5 high, plan on Opus 5.5 xhigh, the verify loop at xhigh"
-for kv in MODEL=claude-opus-5-5 "MODEL_ARG='claude-opus-5-5[1m]'" EFFORT=high \
+echo "== model pins: the default crew, code on Opus 5.5 high, plan on Opus 5.5 xhigh, the verify loop at xhigh"
+for kv in CREW=claude "CODE_PIN='claude/claude-opus-5-5[1m]:high'" "PLAN_PIN='claude/claude-opus-5-5[1m]:xhigh'" \
+          "VERIFY_PIN='claude/claude-opus-5-5[1m]:xhigh'" "RESEARCH_PIN='claude/claude-opus-5-5[1m]:high'" CODE_AGENT=claude \
+          MODEL=claude-opus-5-5 "MODEL_ARG='claude-opus-5-5[1m]'" EFFORT=high CTX_WINDOW=1000000 \
           PLAN_MODEL=claude-opus-5-5 "PLAN_MODEL_ARG='claude-opus-5-5[1m]'" PLAN_EFFORT=xhigh; do
     check "fix: loop.conf has $kv" grep -qxF "$kv" "$T/fix/loop.conf"
 done
-check "verify: loop.conf has EFFORT=xhigh" grep -qx EFFORT=xhigh "$T/ver/loop.conf"
+check "verify: loop.conf has EFFORT=xhigh (the verify pin's)" grep -qx EFFORT=xhigh "$T/ver/loop.conf"
+check "fix: the runbook signs PRs and commits as the code pin's agent and model" \
+    sh -c "grep -qF 'Generated with [Claude Code]' '$T/fix/runbook.md' && grep -qF 'Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>' '$T/fix/runbook.md'"
 
 echo "== preflight: two at once in one run both pass, and the plan pin"
 ( cd "$T/fix" && ./preflight.sh > "$T/pf1" 2>&1 ) & a=$!
@@ -170,9 +175,8 @@ check "preflight 1 printed ok ($(head -c 80 "$T/pf1"))" grep -qx ok "$T/pf1"
 check "preflight 2 printed ok ($(head -c 80 "$T/pf2"))" grep -qx ok "$T/pf2"
 pf=$(cd "$T/fix" && ./preflight.sh plan 2>&1)
 check "preflight plan printed ok ($(echo "$pf" | head -c 80))" test "$pf" = ok
-pf=$(cd "$T/fix" && sed -i.bak 's/^PLAN_MODEL=.*/PLAN_MODEL=claude-other-model/' loop.conf && ./preflight.sh plan 2>&1)
+pf=$(cd "$T/fix" && SELFTEST_ANSWER_AS=claude-other-model ./preflight.sh plan 2>&1)
 check "a plan pin that answers as another model is refused ($(echo "$pf" | head -c 60))" test "$pf" != ok
-mv "$T/fix/loop.conf.bak" "$T/fix/loop.conf"
 
 echo "== task.py pin: a design branch plans until its sign-off, everything else codes"
 pw="$T/pin"; mkdir -p "$pw/.fixloop"
@@ -446,7 +450,7 @@ printf '# Design branch `delta`\n\nMode: design. Deliver: mockup\nPlan signed of
 printf 'delta\n' > "$T/fix/queue-design.txt"
 ( cd "$T/fix" && QUEUE=queue-design.txt STAGGER_SECS=0 POLL_SECS=1 ./runner.sh > "$T/runner2.out" 2>&1 ) &
 r=$!; wait_for 30 sh -c "! kill -0 $r"; kill $r 2>/dev/null
-check "runner: a queue with a design branch checks the plan pin too" grep -q "plan pin claude-opus-5-5, xhigh" "$T/fix/logs/runner.log"
+check "runner: a queue with a design branch checks the plan pin too" grep -qF "plan pin claude/claude-opus-5-5[1m]:xhigh" "$T/fix/logs/runner.log"
 wtr=$(sed -n 's/^WT_ROOT=//p' "$T/fix/loop.conf" | tr -d "'")
 printf '# Design branch `eps`\n\nMode: design. Deliver: mockup\nPlan signed off: 2026-11-07 by Selftest\n' > "$T/fix/briefs/eps.md"
 mkdir -p "$wtr/eps/.fixloop"
@@ -841,6 +845,175 @@ retire --apply --all-runs   # flags in either order
 check "retire --all-runs: retires the late merge of the run beside it" test ! -e "$R/r2-wt/late"
 check "retire --all-runs: ... keeping its state in that run's retired/" test -f "$R/r2/retired/late/status.json"
 check "retire --all-runs: ... and still keeps this run's open PR" test -d "$R/r1-wt/open"
+
+echo "== crews: any agent and model per role, every agent driven the same way"
+# Stand-in agent CLIs: each answers in its own CLI's event format. SELFTEST_AGENT_MODE: plain (answers "done"), flood
+# (big tool results until the wrapper stops it; a resumed session writes its hand-off), flood-always (floods when
+# resumed too), shim (tries what a loop session may not do, and records what git/gh said).
+cat > "$STUBS/st_agent.py" <<'EOF'
+import json, os, subprocess, sys, time
+name, args = sys.argv[1], sys.argv[2:]
+if args == ["--version"]:
+    print(f"{name} stub 1.0"); sys.exit(0)
+log, mode = os.environ.get("SELFTEST_LOG"), os.environ.get("SELFTEST_AGENT_MODE", "plain")
+state = os.environ.get("LOOP_STATE", ".")
+def rec(s):
+    if log:
+        open(log, "a").write(s + "\n")
+def opt(flag):
+    return args[args.index(flag) + 1] if flag in args else ""
+prompt = sys.stdin.read() if name in ("codex", "gemini") else ""
+prompt += " " + (opt("-p") if name in ("agy", "grok", "gemini") else "") + " " + (args[-1] if args else "")
+resumed = "[context guard] Context is at" in prompt or "[end gate] You ended without" in prompt
+ready = "single word READY" in prompt
+model = opt("-m") or opt("--model") or "?"
+rec(f"{name} {'RESUME ' if resumed else ''}{'READY ' if ready else ''}" + " ".join(a if len(a) < 70 else a[:40] + "..." for a in args)
+    + (" rules-included" if "## Notes for" in prompt else ""))
+said = os.environ.get("SELFTEST_ANSWER_AS") or model
+answer = "READY" if ready else ("handed off" if resumed else "done")
+if resumed:
+    open(os.path.join(state, "HANDOFF.md"), "w").write("# Hand-off\n")
+    if os.path.exists(os.path.join(state, "status.json")):
+        os.utime(os.path.join(state, "status.json"))
+if mode == "shim" and not ready and not resumed:
+    for c in (["gh", "pr", "merge", "1"], ["git", "push", "--force", "origin", "x"], ["gh", "api", "--method", "GET", "repos/o/r/pulls/1"], ["gh", "pr", "view", "1"]):
+        rec(f"shim {' '.join(c)} -> {subprocess.run(c, capture_output=True).returncode}")
+BIG = "word " * 30000
+def out(d):
+    print(json.dumps(d), flush=True)
+big = {"codex": lambda i: {"type": "item.completed", "item": {"id": f"i{i}", "type": "command_execution", "aggregated_output": BIG}},
+       "agy": lambda i: {"event": "step_update", "step_type": "tool", "state": "DONE", "output": BIG},
+       "gemini": lambda i: {"type": "tool_result", "tool_id": f"t{i}", "output": BIG},
+       "grok": lambda i: {"type": "tool_result", "output": BIG},
+       "opencode": lambda i: {"type": "step_finish", "sessionID": "ses-1", "part": {"tokens": {"input": 140000, "output": 10, "cache": {"read": 0, "write": 0}}, "cost": 0.01}},
+       "agent": lambda i: {"type": "tool_call", "subtype": "completed", "tool_call": {"result": BIG}}}[name]
+start = {"codex": {"type": "thread.started", "thread_id": "th-1"}, "agy": {"event": "init", "model": said, "conversation_id": "cv-1"},
+         "gemini": {"type": "init", "session_id": "s-1", "model": said}, "grok": {"type": "start"},
+         "opencode": {"type": "step_start", "sessionID": "ses-1", "part": {}}, "agent": {"type": "system", "subtype": "init", "session_id": "cu-1", "model": said}}[name]
+out(start)
+if (mode == "flood" and not ready and not resumed) or (mode == "flood-always" and not ready):
+    for i in range(40):
+        out(big(i)); time.sleep(0.05)
+end = {"codex": [{"type": "item.completed", "item": {"id": "i99", "type": "agent_message", "text": answer}}, {"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 0, "output_tokens": 5}}],
+       "agy": [{"event": "result", "status": "SUCCESS", "response": answer, "conversation_id": "cv-1"}],
+       "gemini": [{"type": "message", "role": "assistant", "content": answer, "delta": True}, {"type": "result", "status": "success", "stats": {}}],
+       "grok": [{"type": "result", "text": answer, "stopReason": "end_turn"}],
+       "opencode": [{"type": "text", "sessionID": "ses-1", "part": {"text": answer}}, {"type": "step_finish", "sessionID": "ses-1", "part": {"tokens": {"input": 900, "output": 5, "cache": {"read": 0, "write": 0}}, "cost": 0.02}}],
+       "agent": [{"type": "assistant", "message": {"content": [{"type": "text", "text": answer}]}}, {"type": "result", "subtype": "success", "is_error": False, "result": answer, "session_id": "cu-1"}]}[name]
+for e in end:
+    out(e)
+EOF
+for a in codex agy gemini grok opencode agent; do
+    printf '#!/usr/bin/env bash\nexec "%s" "%s" %s "$@"\n' "$PY" "$STUBS/st_agent.py" "$a" > "$STUBS/$a"; chmod +x "$STUBS/$a"
+done
+REALBIN="$T/realbin"; mkdir -p "$REALBIN"   # what the shims hand an allowed git/gh call to
+for a in git gh; do printf '#!/usr/bin/env bash\nexit 0\n' > "$REALBIN/$a"; chmod +x "$REALBIN/$a"; done
+M="$T/mix"
+init fix "$M" CREW=mixed || cat "$T/init.log"
+for kv in CREW=mixed RESEARCH_PIN=agy/gemini-4-carbon:high PLAN_PIN=codex/gpt-6-astra:xhigh "CODE_PIN='claude/claude-opus-5-5[1m]:high'" \
+          PLAN_AGENT=codex PLAN_WINDOW=256000 RESEARCH_AGENT=agy; do
+    check "CREW=mixed: loop.conf has $kv" grep -qxF "$kv" "$M/loop.conf"
+done
+check "init_run names the crew and how to change it" grep -q "crew (mixed)" "$T/init.log"
+for role in research plan code; do
+    pf=$(cd "$M" && ./preflight.sh $role 2>&1)
+    check "preflight $role on its own agent printed ok ($(echo "$pf" | head -c 70))" test "$pf" = ok
+done
+pf=$(cd "$M" && SELFTEST_ANSWER_AS=gemini-other ./preflight.sh research 2>&1)
+check "a research pin whose agent answers as another model is refused ($(echo "$pf" | head -c 60))" sh -c "echo \"\$1\" | grep -q 'answered as'" _ "$pf"
+init fix "$M" PLAN_PIN='opencode/openrouter/qwen/qwen3-coder:high@200k'
+check "a re-run changes only the pin it is passed" sh -c "grep -qxF \"PLAN_PIN=opencode/openrouter/qwen/qwen3-coder:high@200000\" '$M/loop.conf' && grep -qx CREW=mixed '$M/loop.conf' && grep -qx RESEARCH_PIN=agy/gemini-4-carbon:high '$M/loop.conf' && grep -qx PLAN_WINDOW=200000 '$M/loop.conf'"
+init fix "$T/mix2" CREW=clean-code
+check "CREW=clean-code: chains sign as Codex, the code pin's agent" grep -qF 'Assisted-by: Codex CLI (GPT-6 Astra)' "$T/mix2/runbook.md"
+init fix "$T/mix3" EFFORT=max
+check "the pre-crew EFFORT= still sets the main pin's effort" sh -c "grep -qxF \"CODE_PIN='claude/claude-opus-5-5[1m]:max'\" '$T/mix3/loop.conf' && grep -qx EFFORT=max '$T/mix3/loop.conf'"
+init fix "$T/mix4" CREW=nosuch; rc=$?
+check "an unknown crew is refused, naming the crews there are" sh -c "[ $rc != 0 ] && grep -q 'the crews are' '$T/init.log'"
+(cd "$M" && "$PY" crew.py set code=codex/gpt-6.1-sol:medium) > "$T/crewset.out" 2>&1
+check "crew.py set in a run changes that role's pin in loop.conf and loop.json" sh -c "grep -qx CODE_PIN=codex/gpt-6.1-sol:medium '$M/loop.conf' && grep -qx CODE_AGENT=codex '$M/loop.conf' && grep -q '\"CODE_PIN\": \"codex/gpt-6.1-sol:medium\"' '$M/loop.json'"
+check "crew.py refuses an effort the agent doesn't take, and changes nothing" sh -c "! (cd '$M' && '$PY' crew.py set code=grok/grok-4.7:high) >/dev/null 2>&1 && grep -qx CODE_PIN=codex/gpt-6.1-sol:medium '$M/loop.conf'"
+check "crew.py takes the words people use for a role (execution = code)" sh -c "cd '$M' && '$PY' crew.py set execution=claude/claude-opus-5-5[1m]:high >/dev/null && grep -qxF \"CODE_PIN='claude/claude-opus-5-5[1m]:high'\" loop.conf"
+CR="$T/crewrepo"; git init -q -b main "$CR"
+(cd "$CR" && "$PY" "$KIT/common/crew.py" use budget && "$PY" "$KIT/common/crew.py" set 'plan=claude/claude-fable-5-2[1m]:high') > "$T/crewrepo.out" 2>&1
+check "crew.py use/set in a repository writes .metaloop/crew.json: the preset and the roles it overrides" "$PY" -c \
+    "import json,sys; d=json.load(open(sys.argv[1])); assert d=={'crew':'budget','plan':'claude/claude-fable-5-2[1m]:high'}, d" "$CR/.metaloop/crew.json"
+(cd "$CR" && "$PY" "$KIT/init_run.py" fix "$T/mix5" OWNER=Selftest GH_REPO=o/r GH_LOGIN=selftest PROJECT="$T/project.json") > "$T/init5.log" 2>&1
+check "a run in that repository starts with its crew" sh -c "grep -qx CREW=budget '$T/mix5/loop.conf' && grep -qxF \"PLAN_PIN='claude/claude-fable-5-2[1m]:high'\" '$T/mix5/loop.conf' && grep -qx CODE_PIN=codex/gpt-6.1-sol:medium '$T/mix5/loop.conf'"
+check "crew.py presets lists the recommended crews first, each role with why" sh -c "'$PY' '$KIT/common/crew.py' presets | head -3 | grep -q '^frontier (' && '$PY' '$KIT/common/crew.py' presets | grep -q 'why code:'"
+
+# sessions on other agents, through agent_run.py, from the mixed run
+sess() {  # <state dir> <pin> [env...]: one session with the run's runbook and settings; prints its result line
+    local st="$1" pin="$2"; shift 2
+    mkdir -p "$st"; echo "Carry on with the task." > "$st/prompt.md"
+    env LOOP_STATE="$st" "$@" "$PY" "$M/agent_run.py" session plan --pin "$pin" --prompt "$st/prompt.md" \
+        --system "$M/runbook.md" --settings "$M/settings.json" --log "$st/s.jsonl" --err "$st/s.err"
+}
+chain_state() { mkdir -p "$1"; echo '{"slug":"s","status":"in_progress","phase":"green","notes":[]}' > "$1/status.json"; }
+for a in agy/gemini-4-carbon:high gemini/gemini-2.5-pro grok/grok-4.7 cursor/sonnet-5.5; do
+    st="$T/sess-${a%%/*}"; mkdir -p "$st"; touch "$st/HANDOFF.md"
+    r=$(sess "$st" "$a" SELFTEST_AGENT_MODE=plain)
+    check "${a%%/*}: a plain session gives the result line (success|...|done) ($(echo "$r" | head -c 50))" sh -c "echo \"\$1\" | grep -q '^success|.*|done$'" _ "$r"
+done
+check "every agent but Claude Code gets the run's rules and its own notes ahead of the task" \
+    sh -c "[ \$(grep -c 'rules-included' '$SELFTEST_LOG') -ge 4 ]"
+chain_state "$T/eg/.fixloop"
+r=$(sess "$T/eg/.fixloop" codex/gpt-6-astra:high SELFTEST_AGENT_MODE=plain)
+check "end gate: a Codex session that ends without its hand-off is resumed once to write it" \
+    sh -c "grep -q '^codex RESUME .* resume th-1' '$SELFTEST_LOG' && test -f '$T/eg/.fixloop/HANDOFF.md' && echo \"\$1\" | grep -q 'handed off'" _ "$r"
+chain_state "$T/soft/.fixloop"
+r=$(sess "$T/soft/.fixloop" codex/gpt-6-astra:high@200k SELFTEST_AGENT_MODE=flood)
+check "context guard (wrapper): at the hand-off threshold a Codex session is interrupted and resumed with the hand-off ask" \
+    sh -c "grep -q 'HANDOFF (wrapper)' '$T/soft/.fixloop/logs/ctx.log' && test -f '$T/soft/.fixloop/HANDOFF.md' && test ! -f '$T/soft/.fixloop/state/last_stop.json'"
+chain_state "$T/hard/.fixloop"
+r=$(sess "$T/hard/.fixloop" codex/gpt-6-astra:high@200k SELFTEST_AGENT_MODE=flood-always)
+check "context guard (wrapper): a session that runs on past the hard stop is ended, with last_stop.json as the hook writes it" \
+    "$PY" -c "import json,sys; d=json.load(open(sys.argv[1])); assert d['kind']=='hard-cap' and d['pct']>=0.72 and d['agent']=='codex', d" "$T/hard/.fixloop/state/last_stop.json"
+chain_state "$T/oc/.fixloop"
+r=$(sess "$T/oc/.fixloop" opencode/openrouter/x/y@200k SELFTEST_AGENT_MODE=flood)
+check "context guard (wrapper): OpenCode's reported tokens trip the hand-off, resumed in its own session" \
+    sh -c "grep -q 'HANDOFF (wrapper)' '$T/oc/.fixloop/logs/ctx.log' && grep -q '^opencode RESUME .*--session ses-1' '$SELFTEST_LOG'"
+if [ "$WIN" = 0 ]; then
+    chain_state "$T/shim/.fixloop"; touch "$T/shim/.fixloop/HANDOFF.md"
+    r=$(sess "$T/shim/.fixloop" codex/gpt-6-astra:high SELFTEST_AGENT_MODE=shim PATH="$REALBIN:$PATH")
+    check "guard rails: a Codex session can't merge or force-push (git/gh refuse with 126)" \
+        sh -c "grep -q 'shim gh pr merge 1 -> 126' '$SELFTEST_LOG' && grep -q 'shim git push --force origin x -> 126' '$SELFTEST_LOG'"
+    check "guard rails: ... and may still read a PR (gh pr view, gh api --method GET)" \
+        sh -c "grep -q 'shim gh pr view 1 -> 0' '$SELFTEST_LOG' && grep -q 'shim gh api --method GET repos/o/r/pulls/1 -> 0' '$SELFTEST_LOG'"
+else skip "guard rails: the git/gh shims are bash, for macOS and Linux"; fi
+check "codex sessions write in the worktree and the run folder, with the network on" \
+    sh -c "grep '^codex ' '$SELFTEST_LOG' | grep -v READY | head -1 | grep -q -- '--sandbox workspace-write -c sandbox_workspace_write.network_access=true --add-dir'"
+(cd "$M" && SELFTEST_AGENT_MODE=plain "$PY" consult.py research auth-flow "How does sign-in work?") > "$T/consult.out" 2>&1
+check "consult.py: a research question runs read-only on the research pin, answer in consults/<name>.md" \
+    sh -c "grep -q '^consults/auth-flow.md · agy/gemini-4-carbon:high' '$T/consult.out' && grep -qx done '$M/consults/auth-flow.md' && grep -q '^agy .*-p' '$SELFTEST_LOG' && ! grep '^agy ' '$SELFTEST_LOG' | grep -v READY | tail -1 | grep -q dangerously"
+printf '[{"name": "q1", "question": "one?"}, {"name": "q2", "question": "two?"}]' > "$T/qs.json"
+(cd "$M" && "$PY" consult.py plan --batch "$T/qs.json" --par 2) > "$T/consult2.out" 2>&1
+check "consult.py --batch: several questions at once, one line each" sh -c "[ \$(grep -c '^consults/q' '$T/consult2.out') = 2 ]"
+# an agent that isn't installed: said up front, never a crash, and a crew this machine can run instead
+pr=$(METALOOP_BIN_CODEX=no-codex "$PY" "$KIT/common/crew.py" presets)
+check "crew.py presets says which crews this machine can run, and what the others need" \
+    sh -c "echo \"\$1\" | grep -q '^frontier (ready here)' && echo \"\$1\" | grep -q '^clean-code (needs Codex CLI)' && echo \"\$1\" | grep -q '^Ready on this machine: frontier'" _ "$pr"
+out=$(cd "$CR" && METALOOP_BIN_CODEX=no-codex "$PY" "$KIT/common/crew.py" use mixed 2>&1)
+check "crew.py use: a crew needing an agent that isn't installed is saved, with its install, its sign-in and a crew that can run" \
+    sh -c "echo \"\$1\" | grep -q 'Codex CLI isn.t installed here.*npm install -g @openai/codex.*sign in' && echo \"\$1\" | grep -q \"'frontier' is the first crew this machine can run\"" _ "$out"
+out=$(cd "$CR" && METALOOP_BIN_CLAUDE=no-claude "$PY" "$KIT/common/crew.py" use auto 2>&1)
+check "crew.py use auto: without Claude Code, the first recommended crew whose agents are here (codex)" \
+    sh -c "echo \"\$1\" | grep -q \"auto: 'codex'\" && grep -q '\"crew\": \"codex\"' '$CR/.metaloop/crew.json'" _ "$out"
+(export METALOOP_BIN_CLAUDE=no-claude; init fix "$T/mix6")
+check "init_run: with no crew chosen and the default's agent missing, the run starts on a crew this machine can run" \
+    sh -c "grep -qx CREW=codex '$T/mix6/loop.conf' && grep -q \"uses the 'codex' crew\" '$T/init.log'"
+mkdir -p "$T/miss"; echo hi > "$T/miss/p.md"
+r=$(LOOP_STATE="$T/miss" METALOOP_BIN_CODEX=no-codex "$PY" "$M/agent_run.py" session plan --pin codex/gpt-6-astra:high \
+    --prompt "$T/miss/p.md" --log "$T/miss/l" --err "$T/miss/e" 2>&1); rc=$?
+check "a session whose agent isn't installed ends with an agent_missing line (rc 127) the loops stop on, not a traceback" \
+    sh -c "[ $rc = 127 ] && echo \"\$1\" | grep -q '^agent_missing|0|0||Codex CLI' && ! echo \"\$1\" | grep -q Traceback" _ "$r"
+check "the fix chain and the verify loop stop on agent_missing instead of counting a strike" \
+    sh -c "grep -q 'agent_missing' '$M/fixloop.sh' && grep -q 'agent_missing' '$KIT/verify/qa-loop.sh'"
+dm() { (cd "$M" && env "$@" "$PY" doctor.py --json </dev/null) | "$PY" -c "import json,sys; a=('Claude Code','Codex CLI','Antigravity CLI','Gemini CLI','Grok Build','OpenCode','Cursor CLI'); print(json.dumps([i for i in json.load(sys.stdin)['items'] if i['name'].startswith(a)]))"; }
+check "doctor: every agent the crew pins is checked (research agy, plan OpenCode, code and verify Claude Code)" "$PY" -c \
+    "import json,sys; n=[i['name'].split(' (')[0] for i in json.loads(sys.argv[1])]; assert sorted(n)==['Antigravity CLI','Claude Code','OpenCode'], n" "$(dm)"
+check "doctor: a missing research agent is a fallback (the orchestrator researches), a missing plan agent blocks" "$PY" -c \
+    "import json,sys; d={i['name'].split(' (')[0]: i for i in json.loads(sys.argv[1])}; assert d['Antigravity CLI']['state']=='fallback' and d['OpenCode']['state']=='missing' and 'crew.py set' in d['OpenCode']['ask'], d" \
+    "$(dm METALOOP_BIN_AGY=no-such-agy METALOOP_BIN_OPENCODE=no-such-opencode)"
 
 echo "== doctor: a verdict per dependency"
 for run in fix ver; do

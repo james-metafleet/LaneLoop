@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Live-verify loop. Each session is a fresh `claude -p` on the pinned model, seeded from the ledger and the previous
+# Live-verify loop. Each session is a fresh headless session on the verify pin's agent and model (agent_run.py), seeded
+# from the ledger and the previous
 # session's HANDOFF.md. Stops when every test is recorded, when the owner quits at a pause, after MAX_SESSIONS, or
 # after two sessions in a row with no ledger progress. Resumable: rerun to pick up where it stopped.
 #
@@ -11,10 +12,7 @@ RUN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$RUN"
 source ./loop.conf
 source ./platform.sh
-readonly MODEL MODEL_ARG EFFORT
-export LOOP_STATE="$(cygpath -m "$RUN")" LOOP_MODEL="$MODEL" LOOP_EFFORT="$EFFORT" LOOP_CTX_WINDOW="$CTX_WINDOW" \
-       LOOP_SOFT_PCT="$SOFT_PCT" LOOP_HARD_PCT="$HARD_PCT"
-export ANTHROPIC_DEFAULT_HAIKU_MODEL="$MODEL" ANTHROPIC_SMALL_FAST_MODEL="$MODEL"   # background calls too
+export LOOP_STATE="$(cygpath -m "$RUN")" LOOP_SOFT_PCT="$SOFT_PCT" LOOP_HARD_PCT="$HARD_PCT"
 PORT="${APP_URL##*:}"; PORT="${PORT%%/*}"
 : "${MAX_SESSIONS:=30}"
 
@@ -119,8 +117,8 @@ handle_pause() {
 # ---------------------------------------------------------------- main
 start_server
 start_chrome
-r=$(./preflight.sh); [ "$r" = ok ] || die "preflight refused (not $MODEL only, ${CTX_WINDOW} window): $r"
-log "preflight ok: $MODEL, ${CTX_WINDOW} window, $EFFORT; thresholds $SOFT_PCT% / $HARD_PCT%"
+r=$(./preflight.sh verify); [ "$r" = ok ] || die "preflight refused (verify pin $VERIFY_PIN): $r"
+log "preflight ok: verify pin $VERIFY_PIN, ${VERIFY_WINDOW} window; thresholds $SOFT_PCT% / $HARD_PCT%"
 sha=$(git -C "$VERIFY_WORKTREE" rev-parse --short HEAD 2>/dev/null || echo "?")
 "$PYTHON" ledger.py build "$sha" >/dev/null
 # tests whose `Requires:` this machine can't meet are recorded blocked now, with the ask, instead of costing a session
@@ -164,18 +162,13 @@ while :; do
     fp_before=$("$PYTHON" ledger.py fingerprint)
     date +%s > state/session_start
     log "session $n start: $remaining left"
-    # The prompt goes on stdin: an argv prompt makes the CLI print a "no stdin data" warning into stdout and breaks the JSON.
-    claude -p --model "$MODEL_ARG" --effort "$EFFORT" \
-        --append-system-prompt-file runbook.md \
-        --settings settings.json \
-        --mcp-config mcp.json --strict-mcp-config \
-        --permission-mode dontAsk \
-        --disallowedTools Agent Task Workflow \
-        --max-budget-usd "$BUDGET_PER_SESSION" \
-        --output-format stream-json --verbose \
-        < "$prompt" > "logs/session-$n.jsonl" 2> "logs/session-$n.err"
+    # agent_run.py starts the verify pin's agent with the runbook, the settings and the Chrome MCP, keeps its context in
+    # bounds and prints the session's result line.
+    res=$("$PYTHON" agent_run.py session verify --prompt "$prompt" --system runbook.md --settings settings.json \
+        --mcp mcp.json --log "logs/session-$n.jsonl" --err "logs/session-$n.err")
     rc=$?
-    IFS='|' read -r sub cost turns apierr text < <("$PYTHON" session_result.py "logs/session-$n.jsonl")
+    IFS='|' read -r sub cost turns apierr text <<< "$res"
+    [ "$sub" = agent_missing ] && die "$text"   # the verify pin's agent isn't installed: not a session, not a strike
     if [ "$apierr" = usage_limit_reached ] || [ "$apierr" = rate_limit_error ]; then
         # The account hit its usage limit. Not a session, not a strike: hand the next session what this one was handed
         # (unless it wrote its own hand-off before the limit hit), wait for the reset, then go on. Any other preflight
@@ -185,7 +178,7 @@ while :; do
         log "usage limit ($text): waiting for the reset; checking every 30 minutes"
         started=$((started - 1))
         while sleep 1800; do
-            pf=$(./preflight.sh)
+            pf=$(./preflight.sh verify)
             [ "$pf" = ok ] && break
             grep -qiE "limit" <<<"$pf" || die "preflight refused while waiting for the usage limit: $pf"
             log "still limited"
