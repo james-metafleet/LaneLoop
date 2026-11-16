@@ -9,6 +9,7 @@ Gemini, planning on Codex, coding on Claude, or any mix you choose.
 
 - [Key Features](#key-features)
 - [Crews](#crews)
+- [Models and Benchmarks](#models-and-benchmarks)
 - [Planning with EGM](#planning-with-egm)
 - [Installation](#installation)
 - [Supported Stacks and Services](#supported-stacks-and-services)
@@ -44,7 +45,8 @@ Gemini, planning on Codex, coding on Claude, or any mix you choose.
 ### Choosing a Crew
 
 Pick a ready-made crew, then change any role you want. Each role is set by a pin of the form
-`agent/model[:effort]`, for example `codex/gpt-6-astra:xhigh`.
+`agent/model[:effort][@window]`, for example `codex/gpt-6-astra:xhigh`. The window is needed only for a model the
+skill doesn't already know.
 
 | Command | Purpose |
 |---|---|
@@ -56,36 +58,119 @@ Pick a ready-made crew, then change any role you want. Each role is set by a pin
 
 Run each command as `python3 <kit>/common/crew.py`, where `<kit>` is the kit folder of the installed skill.
 
+### Agents and Effort Levels
+
+| Agent | Pin Prefix | Effort Levels |
+|---|---|---|
+| Claude Code | `claude` | low, medium, **high**, xhigh, max |
+| Codex CLI | `codex` | low, medium, **high**, xhigh, max, ultra |
+| Antigravity CLI | `agy` | low, medium, **high**, xhigh, max |
+| OpenCode | `opencode` | minimal, low, medium, high, xhigh, max |
+| Gemini CLI | `gemini` | Not configurable |
+| Grok Build | `grok` | Not configurable |
+| Cursor CLI | `cursor` | Not configurable |
+
+Bold marks the default. OpenCode has no default: without an effort in the pin, the model's own setting applies.
+
 ### Recommended Crews
 
-| Crew | Research | Plan | Code | Verify | Best For |
-|---|---|---|---|---|---|
-| `frontier` | Opus 5.5 | Fable 5.2 | Opus 5.5 | Opus 5.5 | Top score per role |
-| `mixed` | Gemini 4 Carbon | GPT-6 Astra | Opus 5.5 | Opus 5.5 | Three vendors |
-| `clean-code` | Opus 5.5 | Fable 5.2 | GPT-6 Astra | Opus 5.5 | Least slop |
-| `budget` | Gemini 4 Carbon | GPT-6.1 Sol | GPT-6.1 Sol | Sonnet 5.5 | Lowest cost |
+Each cell gives the model and, below it, its effort level.
+
+| Crew | Research | Plan | Code | Verify |
+|---|---|---|---|---|
+| `frontier` | Opus 5.5<br>`high` | Fable 5.2<br>`high` | Opus 5.5<br>`high` | Opus 5.5<br>`xhigh` |
+| `mixed` | Gemini 4 Carbon<br>`high` | GPT-6 Astra<br>`xhigh` | Opus 5.5<br>`high` | Opus 5.5<br>`xhigh` |
+| `clean-code` | Opus 5.5<br>`high` | Fable 5.2<br>`high` | GPT-6 Astra<br>`xhigh` | Opus 5.5<br>`xhigh` |
+| `budget` | Gemini 4 Carbon<br>`medium` | GPT-6.1 Sol<br>`high` | GPT-6.1 Sol<br>`medium` | Sonnet 5.5<br>`high` |
 
 - **`frontier`** puts the best measured model in each role; today every role goes to Claude Code.
 - **`mixed`** gives each role to the vendor that measured well in it, so the design is reviewed by a model that will
   not write the code.
-- **`clean-code`** codes with GPT-6 Astra, which SlopCodeBench ranks first for code that stays clean as it grows.
+- **`clean-code`** codes with GPT-6 Astra at xhigh, which has SlopCodeBench's best strict solve rate and its least
+  verbose code.
 - **`budget`** keeps most of the quality at a fraction of the cost.
-
-Claude models (Opus, Fable and Sonnet) run in Claude Code, GPT models in the Codex CLI and Gemini models in the
-Antigravity CLI. `crew.py presets` shows the effort level for each role.
 
 ### Single-Agent Crews
 
-| Crew | Agent | Model |
-|---|---|---|
-| `claude` (default) | Claude Code | Opus 5.5 |
-| `codex` | Codex CLI | GPT-6 Astra, with GPT-6.1 Sol for research |
-| `gemini` | Antigravity CLI | Gemini 4 Carbon |
-| `grok` | Grok Build | Grok 4.7 |
+| Crew | Research | Plan | Code | Verify |
+|---|---|---|---|---|
+| `claude` (default) | Opus 5.5<br>`high` | Opus 5.5<br>`xhigh` | Opus 5.5<br>`high` | Opus 5.5<br>`xhigh` |
+| `codex` | GPT-6.1 Sol<br>`high` | GPT-6 Astra<br>`xhigh` | GPT-6 Astra<br>`xhigh` | GPT-6 Astra<br>`high` |
+| `gemini` | Gemini 4 Carbon<br>`high` | Gemini 4 Carbon<br>`xhigh` | Gemini 4 Carbon<br>`high` | Gemini 4 Carbon<br>`xhigh` |
+| `grok` | Grok 4.7 | Grok 4.7 | Grok 4.7 | Grok 4.7 |
 
-[reference/crew.md](skills/metaloop/reference/crew.md) sets out the benchmarks behind each choice (SlopCodeBench,
-Terminal-Bench 4.1, FrontierCode, LibraryDesignBench and SWE-Atlas-QnA, as of November 2026), what each agent supports,
-and how the context guard, permissions and hand-offs work on agents without Claude Code's hooks.
+Each runs every role on one agent: Claude Code, the Codex CLI, the Antigravity CLI or Grok Build. Grok Build takes no
+effort level.
+
+## Models and Benchmarks
+
+The models and benchmark results below are built into the skill
+([agents.json](skills/metaloop/kit/common/agents.json), as of 16 November 2026).
+[reference/crew.md](skills/metaloop/reference/crew.md) gives the full evidence and its sources.
+
+### Models
+
+| Model | Pin | Context Window | Suited To |
+|---|---|---|---|
+| Opus 5.5 | `claude/claude-opus-5-5[1m]` | 1M | Code, research, verify |
+| Fable 5.2 | `claude/claude-fable-5-2[1m]` | 1M | Plan, research |
+| Sonnet 5.5 | `claude/claude-sonnet-5-5[1m]` | 1M | Research, verify |
+| Haiku 5.5 | `claude/claude-haiku-5-5[1m]` | 1M | Quick research only |
+| GPT-6 Astra | `codex/gpt-6-astra` | 256K\* | Code, plan |
+| GPT-6.1 Sol | `codex/gpt-6.1-sol` | 500K | Code, plan, research |
+| Gemini 4 Carbon | `agy/gemini-4-carbon` | 1M\* | Research, code |
+| Grok 4.7 | `grok/grok-4.7` | 256K\* | None recommended |
+
+The pin prefix names the agent that runs the model (see [Agents and Effort Levels](#agents-and-effort-levels)); add
+`:<effort>` to choose an effort level.
+
+\* Not yet verified. If the agent reports a different window, give it in the pin, for example
+`codex/gpt-6-astra:xhigh@400k`.
+
+### SlopCodeBench
+
+[SlopCodeBench](https://www.scbench.ai/leaderboard) (v1.0, 26 October 2026) has an agent extend its own code through
+196 checkpoints as the spec changes. It scores the solve rate, **erosion** (complexity piling into a few functions) and
+**verbosity** (redundant code). Entries are named by model and effort; a dash means the skill records no figure:
+
+| Model | Effort | Isolated Solve | Cost per Checkpoint |
+|---|---|---|---|
+| GPT 5.6 Sol | xhigh | 32.1% | $3.84 |
+| GPT-6 Astra | xhigh | 31.6% | – |
+| Opus 5.5 | medium | 29.6% | $0.99 |
+| GPT-6.1 Sol | medium | 29.1% | $0.91 |
+| Opus 5.5 | xhigh | 27.6% | – |
+
+- **GPT 5.6 Sol** at xhigh has the highest isolated solve rate, at nearly four times Opus 5.5's cost per checkpoint.
+- **GPT-6 Astra** at xhigh has the best strict solve rate (16.3%) and the least verbose code of any entry (0.158).
+- **Opus 5.5** at medium is the best value of the top ten; at xhigh it has the third-lowest erosion of the top ten
+  (0.495).
+- **GPT-6.1 Sol** at medium has the lowest recorded cost per checkpoint.
+
+No agent solves a problem end to end, and agent code is 2.3 times as verbose and 2.0 times as eroded as human code.
+Gemini 4 Carbon, Grok 4.7 and Fable 5.2 have no entry yet.
+
+### Other Benchmarks
+
+Effort is in brackets where the leaderboard states it; a dash means the model has no entry.
+
+| Model | Terminal-Bench 4.1 | FrontierCode 2.0 | SWE-Atlas-QnA |
+|---|---|---|---|
+| Opus 5.5 | 65.8% (max) | 44.0 (max) | 65.9 (max) |
+| Fable 5.2 | 65.8% (max) | 49.2 (xhigh) | 62.1 |
+| Sonnet 5.5 | 63.9% (max) | – | 64.2 |
+| Haiku 5.5 | 40.0% | – | – |
+| GPT-6 Astra | 60.3% (max) | 42.6 | 59.1 |
+| GPT-6.1 Sol | 60.9% (max) | 42.5 | – |
+| Gemini 4 Carbon | 64.6% (high) | – | 63.7 |
+| Grok 4.7 | 38.8% | – | – |
+
+- **[Terminal-Bench 4.1](https://www.tbench.ai/leaderboard/terminal-bench/4.1)**: hard tasks in a real terminal, end
+  to end. The main basis for the code role.
+- **[FrontierCode 2.0](https://artificialanalysis.ai/agents/coding-agents)**: whether a change is mergeable with no
+  human edits, with out-of-scope changes penalised. The nearest public measure of planning.
+- **[SWE-Atlas-QnA](https://artificialanalysis.ai/agents/coding-agents)**: answering questions about real codebases.
+  The nearest measure of research.
 
 ## Planning with EGM
 
