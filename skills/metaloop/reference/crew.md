@@ -3,7 +3,7 @@
 A MetaLoop run does four kinds of work. The **crew** says which coding agent, model and effort does each one, so one
 run can mix vendors: Gemini researching, Codex planning, Claude coding, for example.
 
-| Role | What its sessions do | Where it runs |
+| Role | What Its Sessions Do | Where It Runs |
 |---|---|---|
 | **research** | Answers a question read-only: how an area of the code works, what a library's docs say, whether a drafted defect is real. One fresh session per question, answer in `consults/<name>.md`. | `consult.py research` |
 | **plan** | A design branch's sessions until their sign-off (mockups, schema pages); plan drafts and reviews on request (a second vendor reviewing a design catches what one model misses). | design chains, `consult.py plan` |
@@ -66,19 +66,34 @@ Nothing is installed for you, and nothing fails halfway because an agent is miss
 
 ### The ready-made crews (November 2026)
 
-| Crew | research | plan | code | verify | When |
-|---|---|---|---|---|---|
-| **frontier** | Opus 5.5 high | Fable 5.2 high | Opus 5.5 high | Opus 5.5 xhigh | The best measured model per role. All Claude Code today: Anthropic leads every role's benchmark. |
-| **mixed** | Gemini 4 Carbon high (agy) | GPT-6 Astra xhigh (Codex) | Opus 5.5 high | Opus 5.5 xhigh | Three vendors, each where it measured well; the design gets a view from a model that won't write the code. |
-| **clean-code** | Opus 5.5 high | Fable 5.2 high | GPT-6 Astra xhigh (Codex) | Opus 5.5 xhigh | Least slop: SlopCodeBench puts Codex's Astra first for code that stays clean as it is extended. |
-| **budget** | Gemini 4 Carbon medium | GPT-6.1 Sol high | GPT-6.1 Sol medium | Sonnet 5.5 high | Most of the quality for a fraction of the cost. |
-| claude · codex · gemini · grok | one agent for every role | | | | One account and one bill. |
+| Crew | Research | Plan | Code | Verify |
+|---|---|---|---|---|
+| `frontier` | Opus 5.5 (high) | Fable 5.2 (high) | Opus 5.5 (high) | Opus 5.5 (xhigh) |
+| `mixed` | Gemini 4 Carbon (high) | GPT-6 Astra (xhigh) | Opus 5.5 (high) | Opus 5.5 (xhigh) |
+| `clean-code` | Opus 5.5 (high) | Fable 5.2 (high) | GPT-6 Astra (xhigh) | Opus 5.5 (xhigh) |
+| `budget` | Gemini 4 Carbon (medium) | GPT-6.1 Sol (high) | GPT-6.1 Sol (medium) | Sonnet 5.5 (high) |
+| `claude` | Opus 5.5 (high) | Opus 5.5 (xhigh) | Opus 5.5 (high) | Opus 5.5 (xhigh) |
+| `codex` | GPT-6.1 Sol (high) | GPT-6 Astra (xhigh) | GPT-6 Astra (xhigh) | GPT-6 Astra (high) |
+| `gemini` | Gemini 4 Carbon (high) | Gemini 4 Carbon (xhigh) | Gemini 4 Carbon (high) | Gemini 4 Carbon (xhigh) |
+| `grok` | Grok 4.7 | Grok 4.7 | Grok 4.7 | Grok 4.7 |
+
+The effort level for each role is in brackets. Claude models (Opus, Fable, Sonnet) run in Claude Code, GPT models in the
+Codex CLI, Gemini models in the Antigravity CLI (`agy`) and Grok in Grok Build.
+
+- **`frontier`**: the best measured model per role. All Claude Code today: Anthropic leads every role's benchmark.
+- **`mixed`**: three vendors, each where it measured well; the design gets a view from a model that won't write the
+  code.
+- **`clean-code`**: least slop. SlopCodeBench puts Codex's Astra first for code that stays clean as it is extended.
+- **`budget`**: most of the quality for a fraction of the cost.
+- **`claude`**: one agent, one account and one bill. The default.
+- **`codex`**, **`gemini`**, **`grok`**: one agent each. Grok trails the other vendors by 20+ points on
+  Terminal-Bench 4.1.
 
 ### The evidence
 
 All numbers as published on the date shown; re-check before relying on them.
 
-| Benchmark | What it measures | Leaders | Source |
+| Benchmark | What It Measures | Leaders | Source |
 |---|---|---|---|
 | **SlopCodeBench** (v1.0, 26 Oct 2026) | An agent extends its own code through 196 checkpoints as the spec changes: solve rate, plus **erosion** (complexity piling into a few functions) and **verbosity** (redundant code). No agent solves a problem end to end; agent code is 2.3x more verbose and 2.0x more eroded than human code. | GPT 5.6 Sol xhigh (Codex) 32.1% isolated solve, $3.84 a checkpoint · **GPT-6 Astra xhigh (Codex) 31.6%, best strict solve 16.3%, least verbose 0.158** · **Opus 5.5 medium (Claude Code) 29.6% at $0.99** · GPT-6.1 Sol medium 29.1% at $0.91 · Opus 5.5 xhigh 27.6%, with the third-lowest erosion of the top ten (0.495) | [scbench.ai/leaderboard](https://www.scbench.ai/leaderboard), arXiv 2603.24755 |
 | **Terminal-Bench 4.1** | Hard tasks in a real terminal, end to end. | Opus 5.5 max 65.8% · Fable 5.2 max 65.8% (3.5x the cost) · Gemini 4 Carbon high (agy) 64.6% · Sonnet 5.5 max 63.9% · GPT-6.1 Sol max 60.9% (about a seventh of Opus 5.5's cost) · GPT-6 Astra max 60.3% · Grok 4.7 38.8% | [tbench.ai](https://www.tbench.ai/leaderboard/terminal-bench/4.1) |
@@ -95,7 +110,7 @@ table, in one change.
 
 ## What each agent supports
 
-| Agent (`pin prefix`) | Context guard | Permissions | Hand-off and end gate | MCP (verify loop) | Reads |
+| Agent (`pin prefix`) | Context Guard | Permissions | Hand-Off and End Gate | MCP (Verify Loop) | Reads |
 |---|---|---|---|---|---|
 | Claude Code (`claude`) | in-session hook `ctx_guard.py`, the wrapper a point above as backstop | `settings.json` allow/deny | hooks (`ctx_guard.py`, `end_gate.py`) | `--mcp-config` | `CLAUDE.md` |
 | Codex CLI (`codex`) | wrapper, estimated from the event stream | `--sandbox workspace-write` with the network on and the run folder writable (`CODEX_SANDBOX`), + guard rails | interrupt, then `codex exec resume` | `-c mcp_servers.*` (with `--trust`) | `AGENTS.md` |
