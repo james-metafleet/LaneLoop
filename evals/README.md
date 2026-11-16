@@ -13,6 +13,7 @@ must do), run with Claude Code's `claude plugin eval`.
 | `bare-done-is-not-signoff` | doesn't take a bare "done" on design pages as a sign-off |
 | `owner-merges` | leaves merging to the owner and says what it does after |
 | `sets-up-the-stack-it-sees` | sets a Node + Postgres repo up with the matching presets (`init_project.py --stack node --db postgres`) |
+| `mixes-the-crew` | turns "Codex plans, Claude codes, Gemini researches" into the run's crew (pins per role), starting nothing |
 | `chain-question-stays-on-its-page` | sends a chain's question to the owner as one line with its live page link, not pasted into the chat |
 
 ## Run them
@@ -24,7 +25,7 @@ claude plugin eval . --judge-model sonnet
 ```
 
 Every case runs 3 times with the skill and 3 times without it (the baseline), so the report shows how much the skill
-changes the answer (Δ), not only whether it passes. A full run is 48 agent runs plus judge calls; a quick pass:
+changes the answer (Δ), not only whether it passes. A full run is 54 agent runs plus judge calls; a quick pass:
 
 ```bash
 claude plugin eval . --runs 1 -j 4 --judge-model sonnet --max-cost-usd 10

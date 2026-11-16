@@ -1,7 +1,8 @@
 # Fix chains
 
-One branch per task, in its own git worktree, worked by a chain of fresh `claude -p` sessions until the task reaches a
-state where the owner decides. Many chains run at once under one runner.
+One branch per task, in its own git worktree, worked by a chain of fresh headless sessions until the task reaches a
+state where the owner decides. Each session runs on the crew's code pin (a design branch on its plan pin until its
+sign-off), on whichever agent that pin names: `agent_run.py` starts it ([crew.md](crew.md)). Many chains run at once under one runner.
 
 ## Pieces
 

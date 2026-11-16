@@ -1,0 +1,13 @@
+{
+ "name": "grok",
+ "group": "one agent",
+ "about": "Every role on xAI's Grok Build with Grok 4.7. It trails the other vendors by 20+ points on Terminal-Bench 4.1; pick it for xAI's own reasons.",
+ "research": "grok/grok-4.7",
+ "plan": "grok/grok-4.7",
+ "code": "grok/grok-4.7",
+ "verify": "grok/grok-4.7",
+ "why": {
+  "all": "Grok 4.7: 38.8% on Terminal-Bench 4.1, 41.6 on the Artificial Analysis coding index."
+ },
+ "as_of": "2026-11-16"
+}

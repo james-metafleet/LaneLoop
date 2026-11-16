@@ -1,12 +1,15 @@
 ---
 name: metaloop
-description: Opt-in way to run large engineering work as unattended Claude Code loops with human gates: a plan designed with Google's EGM and signed off on a page, a live-verify loop that tests the app end to end, and parallel fix chains (a git worktree and branch each) that build, gate and open PRs, each with its own live page, while the main session orchestrates sign-offs, review rounds, merges and re-verification. Use when the user says "run it in a loop", "live verify all of these", "fix all of these in parallel", "overnight" or "unattended", or the work spans many defects or branches (roughly 5+, or more than a day). Also use throughout a run already under way: whenever one of its chains, watchers or live pages, the plan or plan.json, a wave, a design, mockup or schema sign-off, its PRs or merges, the gate or the verify ledger comes up.
+description: Opt-in way to run large engineering work as unattended loops of headless coding-agent sessions with human gates, on any mix of agents and models per role (a crew - research, plan, code, verify - on Claude Code, Codex, Antigravity/Gemini, Grok Build, OpenCode or Cursor): a plan designed with Google's EGM and signed off on a page, a live-verify loop that tests the app end to end, and parallel fix chains (a git worktree and branch each) that build, gate and open PRs, each with its own live page, while the main session orchestrates sign-offs, review rounds, merges and re-verification. Use when the user says "run it in a loop", "live verify all of these", "fix all of these in parallel", "overnight" or "unattended", or the work spans many defects or branches (roughly 5+, or more than a day). Also when they want to choose or mix which agent or model researches, plans, codes or verifies ("use Codex to plan and Claude to code", "which model is best for planning?"). Also use throughout a run already under way: whenever one of its chains, watchers or live pages, the plan or plan.json, a wave, a design, mockup or schema sign-off, its PRs or merges, the gate or the verify ledger comes up.
 ---
 
 # Metaloop
 
-Big work done as **loops of fresh, headless Claude Code sessions**, each small enough to stay sharp, with durable state
-in files, a guard that keeps every session's context in bounds, and **the owner deciding at fixed gates**. The main
+Big work done as **loops of fresh, headless coding-agent sessions**, each small enough to stay sharp, with durable state
+in files, a guard that keeps every session's context in bounds, and **the owner deciding at fixed gates**. Each kind of
+work runs on the agent and model the run's **crew** pins for it: research, plan, code and verify can each be Claude
+Code, Codex, Antigravity, Gemini CLI, Grok Build, OpenCode (any provider's model) or Cursor
+([reference/crew.md](reference/crew.md)). The main
 session you are in is the **orchestrator**: it never does the bulk work itself; it sets up loops, watches them, turns
 their output into decisions for the owner, and carries those decisions back in.
 
@@ -26,6 +29,8 @@ When the work fits, offer the loop before starting; never start one unasked. One
 questions in one batch, each with its recommended answer first:
 
 > This is wide enough for a loop: **N** tests / defects across **M** areas. I'd run it as:
+> 0. **Crew**: who does what. I'd use **<crew>**: research on <pin>, plan on <pin>, code on <pin>, verify on <pin>
+>    (`crew.py presets` has the others and the benchmarks behind each; any role can be any agent you have).
 > 1. **Verify**: a headless loop runs the test plan against the e2e stack and records every result. It stops for you
 >    only when a person must sign in.
 > 2. **Plan**: with EGM. We design it together (`/egm:egm-brainstorm`, `/egm:egm-draft`), fresh reviewers with none of
@@ -41,11 +46,12 @@ questions in one batch, each with its recommended answer first:
 >    the chain applies, I answer the threads. You merge; I reconcile conflicts and re-verify.
 >
 > You'd decide at five points: the plan (the design's approval and the split's sign-off), design sign-offs, schema sign-offs, review items, merges.
-> Typical cost: $3 to $15 per PR, $1 to $25 per verify session.
+> Typical cost on Opus 5.5: $3 to $15 per PR, $1 to $25 per verify session (the budget crew costs a fraction).
 
 | Question | Options (recommended first) |
 |---|---|
-| Which models, and how much of its memory may a session use? | Opus 5.5 1M throughout: plan at extra-high effort, code at high, verify at extra-high; hand off at 65%, stop at 72% (never past 75%) · a cheaper model for the verify loop only |
+| Who does what (the crew)? | `frontier`: the best measured model per role (Opus 5.5 researches, codes and verifies, Fable 5.2 plans) · `mixed`: Gemini researches, Codex plans, Claude codes and verifies · `clean-code`: Claude plans, Codex codes · `budget` · one agent throughout (`claude`, `codex`, `gemini`, `grok`) · your own mix. Recommend among the crews whose agents this machine has (`crew.py check`). |
+| How much of its memory may a session use? | Hand off at 65%, stop at 72% (never past 75%) |
 | How many fixes at once? | 5 · 3 (lighter on the machine) · 8 (faster, more gate contention) |
 | When may the run stop and wait for you? | Only for a sign-in a person must do · for anything it can't do itself |
 | Who merges? | You do · I may merge once CI and the review round are green |
@@ -57,19 +63,23 @@ Write the answers into the runbook as the run's hard rules (step 0). If the owne
 | Who | Does | Never does |
 |---|---|---|
 | **Owner** (the engineer who opted in) | Sets the hard rules, answers the plan's rounds and signs it off, makes every decision, signs off designs and schemas, answers chains and approves review items on their live pages, merges | Babysits sessions |
-| **Orchestrator** (this session; EGM's Elephant) | Designs with the owner through EGM, splits the approved design into branches, writes briefs, starts and watches loops, publishes and syncs every live page, relays the owner's answers to the chains, answers PR threads, merges the base into branches, files tickets | Writes the fixes itself; merges; decides for the owner; carries a chain's conversation in the chat |
+| **Orchestrator** (this session, on any agent that loads skills; EGM's Elephant) | Designs with the owner through EGM, splits the approved design into branches, writes briefs, starts and watches loops, publishes and syncs every live page, relays the owner's answers to the chains, answers PR threads, merges the base into branches, files tickets | Writes the fixes itself; merges; decides for the owner; carries a chain's conversation in the chat |
+| **Research sessions** (`consult.py`, the crew's research pin; plan reviews on the plan pin) | Answer one question each, read-only, into `consults/<name>.md`, many at once | Edit anything; decide |
 | **EGM** (Google's plugin, run by the orchestrator) | Brainstorms and drafts the design doc; its Goldfish (fresh subagents with no memory of the conversation) review the design, then the fan-out; drift-reports the design against merged code | Writes code; runs inside a chain |
 | **Verify loop** (headless sessions) | Runs the test plan against the live e2e stack, records results in a ledger | Edits code, files anything, pauses for anything but a sign-in |
 | **Fix chains** (headless sessions, one branch each, checked out in its own worktree) | red → green → docs → gate → security → PR → CI → records review comments as proposals; asks the owner through its live page (`task.py ask`) | Applies a review comment unapproved, posts to GitHub threads or any page, merges, opens a PR while its question is open |
 
 ## Non-negotiables
 
-1. **Context ceiling.** No session's request may pass 75% of its window. `ctx_guard.py` (a PostToolUse hook) asks for a
-   hand-off at 65% and ends the session at 72%. Sessions hand over through files, never through memory.
-2. **Model pins.** Every call, background calls included, runs on a pinned model and effort. Defaults, all on Opus 5.5
-   1M: **plan** at xhigh (the orchestrator's grilling and plan, and a design branch's sessions until its sign-off),
-   **code** at high (build sessions), the verify loop at xhigh. A preflight refuses to start otherwise and the guard stops
-   any session that drifts.
+1. **Context ceiling.** No session's request may pass 75% of its window. On Claude Code, `ctx_guard.py` (a PostToolUse
+   hook) asks for a hand-off at 65% and ends the session at 72%; on every other agent `agent_run.py` does the same from
+   the session's event stream (it interrupts and resumes the session with the hand-off ask, and ends it at 72%).
+   Sessions hand over through files, never through memory.
+2. **Crew pins.** Every session runs on its role's pin, `agent/model[:effort]`: **research** (`consult.py` questions),
+   **plan** (a design branch's sessions until its sign-off, plan reviews), **code** (build sessions), **verify** (the
+   verify loop). The run keeps them in `loop.conf`; `crew.py` shows and changes them. A preflight per role refuses to
+   start a pin that doesn't answer as itself, and on Claude Code the guard stops any session that drifts (background calls
+   included).
 3. **Human gates are real gates.** Decisions, design (mockup) and schema sign-offs, review-item approvals, database writes
    outside the agreed list, and merges are the owner's. A bare "done" with no comments on the pages is not a sign-off:
    ask. Never work around a safety check (the auto-mode classifier blocks Claude from admin-merging; the owner merges).
@@ -105,12 +115,18 @@ Write the answers into the runbook as the run's hard rules (step 0). If the owne
 ## The lifecycle
 
 Each phase lists its commands; the details are in the reference files. The kit is at `${CLAUDE_SKILL_DIR}/kit` (the
-reference files call it `<kit>`). `<run>` is a run folder made by `<kit>/init_run.py`, which copies the kit's scripts
+reference files call it `<kit>`; in an agent other than Claude Code it is the `kit` folder beside this file). `<run>` is a run folder made by `<kit>/init_run.py`, which copies the kit's scripts
 into it: a run keeps the copy it was made with, and picks up a newer kit only when `init_run.py` is run on it again.
 
 ### 0. Set up (orchestrator + owner)
-- Agree the hard rules with the owner (the set-up questions in "Proposing it") and write them into the run's runbook: the ceiling, the model pins, the pause
+- Agree the hard rules with the owner (the set-up questions in "Proposing it") and write them into the run's runbook: the ceiling, the crew, the pause
   rule, budgets, the approved database writes, who merges.
+- The crew, once per repository: `python3 "${CLAUDE_SKILL_DIR}/kit/common/crew.py" use <preset>` (and `set <role>=<pin>`
+  for any role the owner wants on another agent) writes `.metaloop/crew.json`; commit it. `crew.py presets` marks which
+  crews this machine can run, `use auto` takes the first of them, and `crew.py check` says whether each agent is
+  installed and each pin answers. Never install an agent unasked: a missing one goes to the owner with its install line,
+  or its role moves to an agent they have ([reference/crew.md](reference/crew.md)). A run can override it:
+  `init_run.py ... CREW=<preset>` or `<ROLE>_PIN=<pin>`.
 - The project profile, once per repository: `.metaloop/project.json` says how this project builds, tests and serves,
   which services (databases, caches, queues) its checks need, and which tools. Write it with
   `python "${CLAUDE_SKILL_DIR}/kit/init_project.py" --stack <stack> [--db <service>]...` from the presets (Node, Python,
@@ -137,10 +153,14 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
 - At the end: `ledger.py report`, publish the results page (an Artifact).
 
 ### 2. Plan, Always: EGM designs, MetaLoop fans out ([reference/egm.md](reference/egm.md))
-- Plan on the plan pin: set this session to Opus 5.5 at xhigh (`/model`, `/effort`) and start the investigation agents
-  on it.
-- Check each drafted defect against later sessions' notes and the code before calling it real. Investigate by area
-  (parallel read-only agents, one per area).
+- Research on the research pin: one question per area, all at once, `consult.py research <name> "<question>"` (or
+  `--batch questions.json`), each answer in `consults/<name>.md` with file:line evidence. Read the answers, not the code.
+  (When the research pin is this session's own agent and model, its read-only subagents do as well.)
+- Check each drafted defect against later sessions' notes and the code before calling it real.
+- Plan on the plan pin: when it is this session's agent, set this session to its model and effort (`/model`, `/effort`
+  in Claude Code). When it isn't, draft here and have the plan pin review the draft, the split and the plan page
+  (`consult.py plan <name> "<what to review>" --file <draft>`): a different vendor's model reviewing the design is the
+  point of putting planning on it.
 - **Design with EGM** (`PLANNER=egm`, the default): `/egm:egm-brainstorm`, `/egm:egm-draft` into
   `docs/designs/<feature>.md`, `/egm:egm-review` and `/egm:egm-resolve` until no Blocker or Major is open. The owner
   approves it (`Status: Approved`) and merges its PR into the base: chains read it there.
@@ -226,6 +246,7 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
   verify: ledger.json, tests/, guide/, evidence/, HANDOFF.md, PAUSED.md, REPORT.md
   fix:    plan.json (with an EGM run's design, journeys and files), fanout.md, briefs/, queue-*.txt, logs/runner.log, replies/, design-pages.md, locks/ (gate slots)
   live/                         <slug>.live.html (never committed), urls.json, and per page .sync / .pending / .recs json
+  consults/                     <name>.md: each research or plan question's answer; <name>/ its prompt, log and meta
 <WT_ROOT>/<slug>/.fixloop/      per branch: brief.md, status.json, HANDOFF.md, gate.json, logs/
 ```
 
@@ -236,5 +257,7 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
 - [reference/orchestrator.md](reference/orchestrator.md): every main-session procedure, step by step.
 - [reference/project.md](reference/project.md): the project profile, the stack and service presets, the gate's parsers.
 - [reference/egm.md](reference/egm.md): planning with EGM and the hand-off to the fix chains, step by step.
+- [reference/crew.md](reference/crew.md): roles, pins, the ready-made crews and the benchmarks behind them, what each
+  agent supports, and orchestrating from an agent other than Claude Code.
 - [reference/pitfalls.md](reference/pitfalls.md): what went wrong in practice and the fix for each.
 - [kit/README.md](kit/README.md): the scripts, what each does, how to start.

@@ -21,7 +21,11 @@ Each entry is a failure seen in a real run. Symptom → cause → fix.
   `ANTHROPIC_DEFAULT_HAIKU_MODEL` and `ANTHROPIC_SMALL_FAST_MODEL` to the pinned model; the preflight fails if a second
   model shows up. (`fixloop.sh` sets them per session, to the plan or code pin that session runs on.)
 - **A session tried to end with nothing recorded.** → Nothing required the hand-off. → A Stop hook blocks once until the
-  state file and the hand-off are newer than the session's start.
+  state file and the hand-off are newer than the session's start. (Agents without hooks: `agent_run.py` resumes the
+  session once with the same ask.)
+- **A guard-rail shim ran itself forever.** → To find the real `gh` it skipped its own folder on PATH by comparing path
+  strings, and the folder was spelled two ways (`T//x` on PATH, `T/x` from `pwd`), so it found itself. → Compare the
+  files (`-ef`), never the spellings.
 
 ## Windows
 

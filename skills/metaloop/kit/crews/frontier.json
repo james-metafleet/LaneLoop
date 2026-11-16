@@ -1,0 +1,16 @@
+{
+ "name": "frontier",
+ "group": "recommended",
+ "about": "The best measured model for each role (November 2026). Every role is on Claude Code: the benchmarks put Anthropic first for all four today.",
+ "research": "claude/claude-opus-5-5[1m]:high",
+ "plan": "claude/claude-fable-5-2[1m]:high",
+ "code": "claude/claude-opus-5-5[1m]:high",
+ "verify": "claude/claude-opus-5-5[1m]:xhigh",
+ "why": {
+  "research": "Opus 5.5: best single model in a stock CLI on SWE-Atlas-QnA (65.9), the codebase-question benchmark.",
+  "plan": "Fable 5.2: first on FrontierCode 2.0 (changes mergeable with no human edits, out-of-scope edits penalised); planning spends few tokens, so its price matters little.",
+  "code": "Opus 5.5: joint first on Terminal-Bench 4.1 (65.8%) at about 29% of Fable 5.2's cost; best value in SlopCodeBench's top ten ($0.99 a checkpoint).",
+  "verify": "Opus 5.5 at xhigh: long browser sessions reward care; no benchmark measures this directly."
+ },
+ "as_of": "2026-11-16"
+}

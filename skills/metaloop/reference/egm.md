@@ -40,7 +40,7 @@ Chains never run EGM: they can't spawn subagents, and their brief carries what t
 
 ## 1. Design (EGM)
 
-- Set this session to the plan pin (`PLAN_MODEL` at `PLAN_EFFORT`) before you start, as for any planning.
+- Plan on the plan pin (`PLAN_PIN`) before you start, as for any planning: set this session to it when it is this session's agent, else have it review each draft with `consult.py plan` ([crew.md](crew.md)).
 - `/egm:egm-brainstorm <the work>`. For a run that starts from a verify run, give it the results page and the defects
   you confirmed (orchestrator reference, "Planning", steps 1 to 3: verify before escalating, investigate by area,
   classify). It writes `concepts_brief.md`.

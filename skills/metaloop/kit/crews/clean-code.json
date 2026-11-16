@@ -1,0 +1,16 @@
+{
+ "name": "clean-code",
+ "group": "recommended",
+ "about": "Least slop: Claude plans, Codex writes the code. SlopCodeBench (code that stays clean as an agent keeps extending it) puts Codex's GPT-6 Astra at xhigh at the top.",
+ "research": "claude/claude-opus-5-5[1m]:high",
+ "plan": "claude/claude-fable-5-2[1m]:high",
+ "code": "codex/gpt-6-astra:xhigh",
+ "verify": "claude/claude-opus-5-5[1m]:xhigh",
+ "why": {
+  "research": "Opus 5.5: best single model in a stock CLI on SWE-Atlas-QnA.",
+  "plan": "Fable 5.2: first on FrontierCode 2.0.",
+  "code": "GPT-6 Astra at xhigh: SlopCodeBench second overall (31.6% isolated solve), best strict solve (16.3%) and the least verbose code of any entry (0.158). Fix chains extend code session after session, which is what SlopCodeBench measures.",
+  "verify": "Opus 5.5 at xhigh."
+ },
+ "as_of": "2026-11-16"
+}

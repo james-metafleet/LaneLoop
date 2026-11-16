@@ -15,6 +15,8 @@ settings.json) is kept, and the new render is written beside it as <name>.new.
 import hashlib, json, os, re, shlex, shutil, subprocess, sys
 
 KIT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(KIT, "common"))
+import crew  # noqa: E402
 WINDOWS = os.name == "nt"
 MAC = sys.platform == "darwin"
 
@@ -107,15 +109,15 @@ def write(path, text):
 
 
 DEFAULTS = {
-    # every model call in the loop: pinned, verified by the preflight and by the context guard on every tool call.
-    # Two pins: code (build sessions, and the verify loop) and plan (a design branch's sessions until its sign-off)
-    "MODEL": "claude-opus-5-5",            # canonical id the guard checks
-    "MODEL_ARG": "claude-opus-5-5[1m]",    # what claude -p is given (1M window)
-    "EFFORT": "high",                       # the verify loop's default is xhigh (KIND_DEFAULTS)
-    "PLAN_MODEL": "claude-opus-5-5",
-    "PLAN_MODEL_ARG": "claude-opus-5-5[1m]",
-    "PLAN_EFFORT": "xhigh",
-    "CTX_WINDOW": "1000000",
+    # Every session runs on a pin: agent/model[:effort] for its role (research, plan, code, verify), checked by the
+    # preflight and, all through the session, by the context guard. The four pins come from the crew: the repository's
+    # .metaloop/crew.json, else the kit's default crew (all Claude Code, Opus 5.5 1M); CREW=<preset> picks another, and
+    # RESEARCH_PIN= / PLAN_PIN= / CODE_PIN= / VERIFY_PIN= set one role (crew.py lists the presets and the models). Each pin's
+    # agent, model, effort and window are written out as <ROLE>_AGENT/_MODEL/_EFFORT/_WINDOW, and the main pin's as the
+    # pre-crew MODEL, MODEL_ARG, EFFORT, CTX_WINDOW (PLAN_* for the plan pin); passing those old keys still works.
+    "CREW": crew.DEFAULT_CREW,
+    "CODEX_SANDBOX": "workspace-write",     # Codex sessions: danger-full-access only on the owner's decision (runbook)
+    "SESSION_TIMEOUT_MIN": "300",           # any session, any agent: a runaway guard, not a forecast
     "SOFT_PCT": "65",                       # hand-off
     "HARD_PCT": "72",                       # forced stop; must stay below the 75% ceiling
     "BUDGET_PER_SESSION": "150",            # USD, a runaway guard, not a forecast
@@ -157,8 +159,57 @@ DEFAULTS = {
     # with a `Requires:` line
     "HAVE_CAPS": "",
 }
-# per kind of run: the verify loop drives the live app in long browser sessions, where care is worth the extra effort
-KIND_DEFAULTS = {"verify": {"EFFORT": "xhigh"}}
+# per kind of run: nothing yet (the verify loop's extra care is the crews' verify pin: xhigh)
+KIND_DEFAULTS = {}
+
+
+def resolve_crew(kind, existing, over, repo):
+    """The run's four pins, last word wins: the kit's default crew; the repository's .metaloop/crew.json; the pins this
+    run already has (a re-run); CREW=<preset> passed now; then <ROLE>_PIN=... passed now, and the pre-crew keys
+    (MODEL_ARG / EFFORT for the main pin, PLAN_MODEL_ARG / PLAN_EFFORT for the plan pin)."""
+    name, pins = crew.DEFAULT_CREW, crew.preset_pins(crew.DEFAULT_CREW)
+    cf = os.path.join(repo, ".metaloop", "crew.json")
+    chose = os.path.exists(cf) or any(existing.get(f"{r.upper()}_PIN") for r in crew.ROLES) or existing.get("MODEL_ARG") \
+        or over.get("CREW") or any(over.get(k) for k in [f"{r.upper()}_PIN" for r in crew.ROLES] + ["MODEL_ARG", "EFFORT"])
+    if not chose and crew.missing_agents(pins):
+        # nobody chose a crew and this machine lacks the default's agent (an orchestrator on Codex, say): start with the
+        # first recommended crew it can run, and say so
+        alt = crew.first_runnable()
+        if alt:
+            print(f"note: no crew chosen and {crew.registry()['agents'][crew.missing_agents(pins)[0]]['name']} isn't "
+                  f"installed here, so this run uses the '{alt}' crew, the first one this machine can run "
+                  f"(crew.py use <preset> to choose)")
+            name, pins = alt, crew.preset_pins(alt)
+    if os.path.exists(cf):
+        name, pins = crew.from_crew_file(cf)
+    had = {r: existing[f"{r.upper()}_PIN"] for r in crew.ROLES if existing.get(f"{r.upper()}_PIN")}
+    if had:
+        pins.update(had)
+        name = existing.get("CREW") or name
+    elif existing.get("MODEL_ARG"):
+        pins.update(crew.legacy_pins(existing, kind))
+    if over.get("CREW"):
+        name, pins = over["CREW"], crew.preset_pins(over["CREW"])
+    for role, mk, ek in (("verify" if kind == "verify" else "code", "MODEL_ARG", "EFFORT"),
+                         ("plan", "PLAN_MODEL_ARG", "PLAN_EFFORT")):
+        if mk in over or ek in over:
+            cur = crew.parse(pins[role])
+            model, effort = over.get(mk, cur["model"]), over.get(ek, cur["effort"])
+            pins[role] = f"{cur['agent']}/{model}" + (f":{effort}" if effort else "")
+    for r in crew.ROLES:
+        if over.get(f"{r.upper()}_PIN"):
+            pins[r] = over[f"{r.upper()}_PIN"]
+    return name, pins
+
+
+def attribution(pins):
+    """How chains sign PRs and commits: by the agent and model that write the code."""
+    c = crew.parse(pins["code"])
+    if c["agent"] == "claude":
+        return ("🤖 Generated with [Claude Code](https://claude.com/claude-code)",
+                f"Co-Authored-By: {c['label'].replace('(1M)', '(1M context)')} <noreply@anthropic.com>")
+    name = crew.registry()["agents"][c["agent"]]["name"]
+    return f"🤖 Generated with {name} ({c['label']})", f"Assisted-by: {name} ({c['label']})"
 
 
 def main(a):
@@ -177,9 +228,18 @@ def main(a):
     conf["VERIFY_WORKTREE"] = fwd(os.path.join(os.path.dirname(run), conf["RUN_NAME"] + "-target"))
     # A re-run keeps every setting the run already has, hand edits to loop.conf included, and changes only the KEY=VALUEs
     # passed now. (A kit default that changed since reaches an existing run only when it is passed.)
-    conf.update(read_conf(os.path.join(run, "loop.conf")))
+    existing = read_conf(os.path.join(run, "loop.conf"))
+    conf.update(existing)
     conf.update(KIND=kind, RUN=run, KIT=fwd(KIT))
     conf.update(over)
+    try:
+        crew_name, pins = resolve_crew(kind, existing, over, repo)
+        conf.update(crew.derived(pins))
+        conf.update(crew.run_pins(kind, conf))
+    except crew.PinError as e:
+        sys.exit(f"crew: {e}")
+    conf["CREW"] = crew_name
+    conf["PR_FOOTER"], conf["COMMIT_TRAILER"] = attribution(pins)
     if not conf.get("BASE"):
         conf["BASE"] = default_branch()
     prof_path = conf["PROJECT"] if os.path.isabs(conf["PROJECT"]) else os.path.join(repo, conf["PROJECT"])
@@ -266,6 +326,10 @@ def main(a):
         except OSError:
             print("note: add .fixloop/ to .git/info/exclude yourself")
     print(f"{kind} run ready in {run}")
+    print(f"crew ({crew_name}):\n{crew.table(pins)}\n(change it: {conf['PYTHON']} {run}/crew.py use <preset> | set <role>=<pin>)")
+    for a in crew.missing_agents(pins):
+        print(f"note: {crew.install_hint(a)}. doctor.py lists it; the run won't start until it is installed or its "
+              f"roles are given another agent ({conf['PYTHON']} {run}/crew.py set <role>=<pin>, or use auto)")
     print(f"next: {conf['PYTHON']} {run}/doctor.py (what this machine is missing, and the way out for each); read the kit "
           "README section for this kind; then " +
           (f"write tests/*.md and run {conf['PYTHON']} init_ledger.py" if kind == "verify"

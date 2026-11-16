@@ -45,15 +45,17 @@ With `PLANNER=egm` (the default) EGM designs the work and the orchestrator fans 
 EGM's brainstorm; steps 4 and 5 (grilling rounds, drawing up the plan) are the `PLANNER=grill` way; step 6 (sign-off)
 applies to both.
 
-Plan on the plan pin (`PLAN_MODEL` at `PLAN_EFFORT`, default Opus 5.5 at xhigh): set this session to it (`/model`,
-`/effort`) before triage, and start the investigation agents on it. Switch back to the owner's choice once the plan is
-signed off. A run that starts from a list of tickets instead of a verify run plans the same way: no chain starts before
+Plan on the plan pin (`PLAN_PIN`; `crew.py` shows it): when it is this session's own agent, set this session to its model
+and effort (`/model`, `/effort` in Claude Code) before triage, and switch back to the owner's choice once the plan is
+signed off. When it is another agent, draft here and have the plan pin review each draft, the split and the plan page
+with `consult.py plan`, and carry its findings into the next draft. A run that starts from a list of tickets instead of a verify run plans the same way: no chain starts before
 `sign_plan.py`.
 
 1. **Verify before escalating.** A defect a loop session drafted is a lead, not a finding: read the later sessions' notes
    and the code before calling it a bug, and never "restore" data on the strength of one session's guess.
-2. **Investigate by area** with parallel read-only agents (this skill directs them), each writing its
-   findings with file:line evidence to a file.
+2. **Investigate by area** on the research pin: one `consult.py research <area> "<question>"` per area, all at once
+   (`--batch`), each answer in `consults/<area>.md` with file:line evidence. Read-only subagents of this session do as
+   well when the research pin is this session's own agent and model.
 3. **Classify each defect:** BUG (fix it), DECISION (the owner chooses the behaviour), GUIDE (the test plan is wrong). Give
    each a gate: none, decision, mockup (any pixel a user sees changes), schema (any stored field, collection or index
    changes; fields never stored need no page).
