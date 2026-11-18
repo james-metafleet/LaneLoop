@@ -841,7 +841,7 @@ check "wait_verify: a progress return hands back the same from-line, so a stop l
     sh -c "grep -q 'progress' '$T/wv.out' && grep -qx '== next from-line: $v0' '$T/wv.out'"
 v1=$(wc -l < "$T/ver/logs/loop.log")
 ( cd "$T/ver" && PATH="$FAKECLOCK:$PATH" WAIT_POLL_SECS=1 LIVE_SYNC_SECS=0 ./wait_verify.sh "$v1" > "$T/wv2.out" 2>&1 ) & r=$!
-echo 3000 > "$T/jump"
+echo 2970 > "$T/jump"   # under 50m: a nap's own second or two on a slow machine still reads as 50m (duration rounds up)
 wait_for 20 sh -c "! kill -0 $r"; kill $r 2>/dev/null; echo 0 > "$T/skew"; : > "$T/jump"
 check "wait_verify: the computer slept, so it returns on waking with the same from-line" \
     sh -c "grep -q 'the computer slept for 50m' '$T/wv2.out' && grep -qx '== next from-line: $v1' '$T/wv2.out'"
