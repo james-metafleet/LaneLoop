@@ -10,6 +10,8 @@
                                a question for the owner that does NOT stop the chain: it shows on the branch's live page,
                                you carry on with the recommended answer, and the pr phase waits until it is answered
   done TASK "how it was proved"  tick one of the brief's tasks (T1, T2, ...) once the test that proves it passes
+  size                         this branch's changed lines (committed or not) against its size cap; exit 1 over it.
+                               The pr phase and ready refuse a branch over its cap
   ready "summary"              PR open, CI read, review comments recorded (or a design page pushed) -> the owner decides
   needs "exact ask"            stuck on something only the owner can answer (chain stops)
   block "reason"               cannot proceed for a reason outside the task (chain stops)
@@ -17,7 +19,8 @@
 
 Main session only: status · pin [BRIEF] (plan or code: the model pin the next session runs on; with BRIEF, for a branch
 not started yet, so not signed off) · requeue "why" (back to todo, so the next runner picks it up) · answer Q1 "answer"
-(the owner's answer from the live page; the next session reads it as an OWNER ANSWER note)
+(the owner's answer from the live page; the next session reads it as an OWNER ANSWER note) · cap LINES "why" (the
+owner's new size cap for this branch, over its brief's; a chain never sets its own)
 """
 import contextlib, datetime, json, os, re, sys, time
 
@@ -33,7 +36,8 @@ USAGE = __doc__.replace("python $FIXLOOP", PY + " $FIXLOOP")
 PATH = os.path.join(RUN, "status.json")
 LOCK = PATH + ".lock"
 FINAL = {"awaiting_owner", "needs_owner", "blocked", "done"}
-ARGS = {"phase": 1, "note": 1, "pr": 2, "review": 1, "done": 1, "answer": 2, "wait": 1}   # the fewest each command takes
+# the fewest arguments each command takes
+ARGS = {"phase": 1, "note": 1, "pr": 2, "review": 1, "done": 1, "answer": 2, "wait": 1, "cap": 2}
 
 
 def now():
@@ -97,6 +101,33 @@ def pin(brief, notes):
     return "plan" if design and not any(" SIGNED OFF (" in n for n in notes) else "code"
 
 
+def size_refusal(d, what):
+    """Why a branch can't publish at its size (the pr phase, or ready), or None. A design branch before its sign-off
+    opens no pull request; a brief with no "Size cap:" line predates the cap, so the plan never sized it against one."""
+    try:
+        brief = open(os.path.join(RUN, "brief.md"), encoding="utf8").read()
+    except OSError:
+        return None
+    if pin(brief, d["notes"]) == "plan":
+        return None
+    import pr_size
+    cap = d.get("max_lines")
+    if cap is None:
+        cap = pr_size.brief_cap(brief)
+    if not cap:
+        return None
+    try:
+        s = pr_size.count(os.getcwd(), c=CONF)
+    except RuntimeError as e:
+        return f"can't measure this branch's size, so {what} waits: {e}. Run `git fetch origin`, then try again"
+    if s["total"] <= cap:
+        return None
+    return (f"{pr_size.describe(s, cap)}\n{what} refused: {cap} changed lines is {OWNER}'s cap for this branch's pull "
+            "request. Don't trim tests, docs or error handling, or pack code tighter, to get under it. Keep your commits "
+            f"and finish this session with task.py needs \"over the size cap: {s['total']} of {cap} lines; split: "
+            "<tasks that stay> here, <tasks that move> to a follow-up branch\"")
+
+
 def main(a):
     sys.stdout.reconfigure(encoding="utf-8")   # a note or question with "→" must not crash `show` on Windows (cp1252)
     if not a:
@@ -125,6 +156,15 @@ def main(a):
         s = min(int(a[1]), 900); time.sleep(s); print(f"waited {s}s"); return
     if cmd == "status":
         print(load()["status"]); return
+    if cmd == "size":
+        import pr_size
+        cap = pr_size.worktree_cap(os.getcwd(), CONF)
+        try:
+            s = pr_size.count(os.getcwd(), c=CONF)
+        except RuntimeError as e:
+            raise SystemExit(str(e))
+        print(pr_size.describe(s, cap))
+        sys.exit(1 if cap and s["total"] > cap else 0)
     if cmd == "pin":
         print(pin(open(os.path.join(RUN, "brief.md"), encoding="utf8").read(), load()["notes"])); return
     with locked():
@@ -140,6 +180,10 @@ def change(cmd, a, d):
         if a[1] == "pr" and waiting:  # the owner may still answer differently: nothing is published on an assumption
             raise SystemExit(f"{', '.join(waiting)} still open: {OWNER} hasn't answered. Hold the pull request: finish this "
                              f"session with task.py needs \"holding the pull request until {OWNER} answers {', '.join(waiting)}\"")
+        if a[1] == "pr":
+            why = size_refusal(d, "the pr phase")
+            if why:
+                raise SystemExit(why)
         d["phase"] = a[1]; d["status"] = "in_progress"
         d["notes"].append(f"{now()} [{a[1]}] {a[2] if len(a) > 2 else ''}")
     elif cmd == "note":
@@ -171,9 +215,17 @@ def change(cmd, a, d):
             d["tasks_done"].append(a[1])
         d["notes"].append(f"{now()} task {a[1]} done: {a[2] if len(a) > 2 else ''}")
     elif cmd in ("ready", "needs", "block"):
+        why = size_refusal(d, "ready") if cmd == "ready" else None
+        if why:
+            raise SystemExit(why)
         d["status"] = {"ready": "awaiting_owner", "needs": "needs_owner", "block": "blocked"}[cmd]
         d["summary"] = a[1] if len(a) > 1 else ""
         d["notes"].append(f"{now()} {d['status']}: {d['summary']}")
+    elif cmd == "cap":
+        if not a[1].isdigit():
+            raise SystemExit(f"cap takes the new cap in changed lines, then why\n{USAGE}")
+        d["max_lines"] = int(a[1])
+        d["notes"].append(f"{now()} SIZE CAP now {int(a[1])} changed lines ({OWNER}): {a[2]}")
     elif cmd == "requeue":
         d["status"] = "todo"; d["notes"].append(f"{now()} requeued: {a[1] if len(a) > 1 else ''}")
     else:

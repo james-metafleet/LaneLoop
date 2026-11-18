@@ -13,13 +13,16 @@ change and how to verify it). The orchestrator then draws the plan's branches fr
   "files":      the design's files this branch creates or changes (its binding boundary; a design glob covers a match)
   "cujs":       the design's journeys it delivers ("CUJ1", ...)
   "depends_on": slugs it builds on, which must be in an earlier wave
-and its tasks, each with the test that proves it. `check` refuses until every design file has an owner, no two branches
-of a wave own the same file, every journey is delivered, and the design the plan was imported from is the one on
-origin/<base> (chains branch from there and read it as their spec).
+and its tasks, each with the test that proves it, and "est_lines", the lines its pull request is expected to change (tests
+included), within the run's cap (PR_MAX_LINES; pr_size.py). `check` refuses until every design file has an owner, no two
+branches of a wave own the same file, every journey is delivered, every build branch is sized within its cap, and the
+design the plan was imported from is the one on origin/<base> (chains branch from there and read it as their spec).
 """
 import argparse, datetime, fnmatch, hashlib, json, os, re, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import pr_size  # noqa: E402
 
 
 def conf():
@@ -292,7 +295,7 @@ def check(plan, repo, base, fetch=True):
     delivered = {j for b in branches for j in b.get("cujs", [])}
     problems += [f"no branch delivers {j}" for j in sorted(cuj_ids - delivered)]
     problems += [f"a branch delivers {j}, which the design doesn't have" for j in sorted(delivered - cuj_ids)]
-    return problems
+    return problems + pr_size.plan_problems(plan)
 
 
 def cmd_check(a, c):
@@ -327,6 +330,10 @@ def cmd_render(a, c):
            f"*   **Base:** `{a.base}` (every branch starts from it; a wave starts once the waves it depends on merged)", "",
            "This document splits the approved design into branches that separate sessions build at the same time, each in",
            "its own worktree, with only its brief and the design to go on. Review the split, not the design.", ""]
+    cap = pr_size.run_cap()
+    if cap:
+        out[-1:-1] = [f"Each build branch becomes one pull request of at most {cap} changed lines (added plus removed,",
+                      "tests included); its Size line is the orchestrator's estimate.", ""]
     if plan.get("goals"):
         out += ["## Goals (from the design)", ""] + [f"*   {g}" for g in plan["goals"]] + [""]
     if plan.get("non_goals"):
@@ -344,6 +351,11 @@ def cmd_render(a, c):
             out += [f"*   **Files:** " + (", ".join(f"`{f}` ({actions.get(f, 'match')})" for f in b.get("files", [])) or "none")]
             out += [f"*   **Journeys:** " + (", ".join(f"{j} ({cujs[j]['title']})" if j in cujs else j for j in b.get("cujs", [])) or "none")]
             out += [f"*   **Depends on:** " + (", ".join(f"`{x}`" for x in b.get("depends_on", [])) or "nothing")]
+            if b.get("mode", "build") == "build" and pr_size.branch_cap(b):
+                why = b.get("max_lines_why") or "(no reason given)"
+                own = f": its own, because {why}" if b.get("max_lines") is not None else ""
+                out += [f"*   **Size:** about {b.get('est_lines') or '?'} changed lines, tests included (cap "
+                        f"{pr_size.branch_cap(b)}{own})"]
             out += ["*   **Tasks:**"] + [f"    *   {t['id']}: {t['text']} (proved by `{t.get('test') or '?'}`)"
                                        for t in b.get("tasks", [])] + [""]
     out += ["## File ownership", "", "| File | Action | Branch (wave) |", "|---|---|---|"]

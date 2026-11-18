@@ -73,6 +73,7 @@ details.done ol{margin:8px 0 0; padding-left:20px; display:grid; gap:6px; color:
 .tasks li{font-size:13px; color:var(--ink-2); overflow-wrap:anywhere}
 .tasks .test{font-family:var(--mono); font-size:11.5px; color:var(--muted)}
 .notasks{font-size:12.5px; color:var(--warn-fg); font-weight:600}
+.branch .sub .warn{color:var(--warn-fg); font-weight:600}
 .files{margin:6px 0 0; font-family:var(--mono); font-size:11.5px; color:var(--muted); overflow-wrap:anywhere}
 .tw{overflow-x:auto; background:var(--card); border:1px solid var(--line); border-radius:12px}
 table{border-collapse:collapse; width:100%; font-size:13px; min-width:760px}
@@ -237,6 +238,16 @@ var PLAN = __PLAN__;
     det.appendChild(ol); sec.appendChild(det);
   }
 
+  // Every build branch is one pull request, sized under the run's cap (PR_MAX_LINES) or its own signed-off max_lines.
+  function capOf(b) { return b.max_lines != null ? b.max_lines : (P.pr_max_lines || 0); }
+  function sizeIssue(b) {
+    if ((b.mode || 'build') !== 'build' || !P.pr_max_lines) return null;
+    if (!b.est_lines) return 'not sized yet';
+    if (capOf(b) && b.est_lines > capOf(b)) return 'over its ' + capOf(b) + '-line cap';
+    if (b.max_lines != null && !b.max_lines_why) return 'missing the reason for its own cap';
+    return null;
+  }
+
   function planList() {
     if (!branches.length) return;
     $('plan-sec').hidden = false;
@@ -260,8 +271,15 @@ var PLAN = __PLAN__;
         if ((b.tests || []).length) sub.appendChild(el('span', null, 'Re-verifies ' + b.tests.join(', ')));
         if ((b.cujs || []).length) sub.appendChild(el('span', null, 'Delivers ' + b.cujs.join(', ')));
         if ((b.depends_on || []).length) sub.appendChild(el('span', null, 'After ' + b.depends_on.join(', ')));
+        if ((b.mode || 'build') === 'build' && P.pr_max_lines) {
+          sub.appendChild(el('span', sizeIssue(b) ? 'warn' : null, b.est_lines
+            ? 'About ' + b.est_lines + ' of ' + capOf(b) + ' lines' + (sizeIssue(b) ? ': ' + sizeIssue(b) : '')
+            : 'Not sized yet'));
+        }
         card.appendChild(sub);
         if (b.scope) card.appendChild(el('p', 'ink2', b.scope));
+        if (b.max_lines != null) card.appendChild(el('p', 'ink2', 'Its own size cap, ' + b.max_lines + ' lines: ' +
+          (b.max_lines_why || 'no reason given yet')));
         if ((b.files || []).length) card.appendChild(el('p', 'files', 'Files: ' + b.files.join(' · ')));
         if ((b.tasks || []).length) {
           var ul = el('ul', 'tasks');
@@ -300,7 +318,10 @@ var PLAN = __PLAN__;
     if (open.length) return {ok: false, text: open.length + (open.length === 1 ? ' question is' : ' questions are') + ' still open. Sign-off opens once every question is answered and recorded.'};
     if (!branches.length) return {ok: false, text: 'The plan is being drawn up from your answers.'};
     if (untasked.length) return {ok: false, text: untasked.map(function (b) { return b.slug; }).join(', ') + ' not broken into tasks yet.'};
-    return {ok: true, text: 'Every question is answered and every branch is broken into tasks. Sign off to start the first wave.'};
+    var unsized = branches.filter(sizeIssue);
+    if (unsized.length) return {ok: false, text: unsized.map(function (b) { return b.slug + ' is ' + sizeIssue(b); }).join('; ') + '.'};
+    return {ok: true, text: 'Every question is answered and every branch is broken into tasks' +
+      (P.pr_max_lines ? ' and sized within its pull request cap' : '') + '. Sign off to start the first wave.'};
   }
   function paintSignoff() {
     var r = ready(), btn = $('signoff-btn');

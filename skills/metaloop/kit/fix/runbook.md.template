@@ -37,6 +37,13 @@ You are one session in a chain that delivers ONE task on ONE branch. {{OWNER}} a
   text says what happened, with real ids, and where it bites.
 - The brief's Tasks say what done means. Tick each with `task.py done T1 "<how it was proved>"` once its test passes; every
   task is ticked before the pr phase.
+- **Size.** The brief's `Size cap:` line is the most lines this branch's pull request may change: added plus removed,
+  tests included, as GitHub counts them (lockfiles, generated files and signed-off mockup and schema pages don't count).
+  Small PRs get read properly; that is why {{OWNER}} set it. `task.py size` measures the branch, committed or not, against
+  its cap; `task.py phase pr` and `task.py ready` refuse a branch over it. When the work won't fit, never trim tests,
+  docs or error handling, or pack code tighter, to get under it. Keep your commits and stop with `task.py needs "over the
+  size cap: <N> of <cap> lines; split: <tasks that stay> here, <tasks that move> to a follow-up branch"`. Stop as soon as
+  you can see it coming (red's tests alone near the cap, or green half done and over it), not after building everything.
 - Never apply a review comment on your own. Record each with a proposed resolution (`task.py review`); {{OWNER}} decides.
 - You can't publish artifacts or file tickets: say what should be filed in a `task.py note` and in the PR body.
 
@@ -50,7 +57,8 @@ Run task.py and gate.py with these exact paths (they are allow-listed): `{{PYTHO
    the right reason. Commit them: `test(<area>): <defect> (red)`.
 2. **green**: fix the code; the filtered tests pass; build what you touched (the gate builds and tests everything).
    Find every caller and every test of any signature you change (constructor, function, interface, schema) and update
-   them in the same change. Commit: `fix(<area>): <defect summary>`.
+   them in the same change. Commit: `fix(<area>): <defect summary>`. Then `task.py size`: over the cap is the size
+   rule's `needs`.
 3. **docs**: update the matching docs sections (and the decisions log if the brief records a decision). Commit.
 4. **gate**: `{{PYTHON}} {{RUN}}/gate.py --start`, then poll `{{PYTHON}} {{RUN}}/gate.py --status` with
    `{{PYTHON}} {{RUN}}/task.py wait 300` between polls (it takes a while; other branches share the test slots).
@@ -62,7 +70,8 @@ Run task.py and gate.py with these exact paths (they are allow-listed): `{{PYTHO
    that "shows nothing" or a suite that ran zero tests is not a pass: read the gate's verdict.
 5. **security**: run the `security-review` skill over the branch diff; fix high-confidence findings in scope, note the rest.
 6. **pr**: if `task.py phase pr` is refused because a question is still open, finish with
-   `task.py needs "holding the pull request until {{OWNER}} answers Q<n>"`: nothing is published on an assumption.
+   `task.py needs "holding the pull request until {{OWNER}} answers Q<n>"`: nothing is published on an assumption. If
+   it is refused for size, finish with the size rule's `needs`.
    `git fetch origin` and `git merge origin/{{BASE}}` (resolve conflicts, then re-run the gate if anything merged);
    `git push -u origin <branch>`; `gh pr create --base {{BASE}} --title "<conventional title, no tool names>" --body-file .fixloop/pr-body.md`.
    The body stands on its own: what was wrong (defect ids, the tests that showed it), what changed,
@@ -89,8 +98,10 @@ If `task.py show` has a note starting `APPROVED REVIEW ITEMS`, the PR already ex
 their recorded proposals describe (or as the note amends them), nothing else: test-first where behaviour changes (phases
 red and green again), `git merge origin/{{BASE}}` if it moved, run the gate, push to the same branch (no new PR), then poll
 CI as in phase 7, record any NEW review comments as proposals, and finish with
-`task.py ready "<pushed: commit ids per item; CI state; N new review items>"`. Don't reply to or resolve PR threads:
-the main session does that, citing your commits.
+`task.py ready "<pushed: commit ids per item; CI state; N new review items>"`. The size cap still holds: run
+`task.py size` before you push. If the items take the pull request over its cap, push only the items that fit and stop
+with `task.py needs "the review items take the PR to <N> of <cap> lines: <items> don't fit"`. Don't reply to or resolve
+PR threads: the main session does that, citing your commits.
 
 ## Design-only chains (the brief says `Mode: design`)
 
@@ -137,9 +148,9 @@ the choices that note lists. That note overrides the brief's "Mode: design" and 
 - **Schema:** implement exactly the page's fields, defaults and indexes; update the matching data-model docs in the docs
   phase. A migration or backfill the page specifies is written (and unit-tested when the page says so) but never run
   against any database; the PR lists the run order around the deploy.
-- Then phases 1 to 7 as usual. In the pr phase, change this branch's README row(s) from "Building on" to
-  "Built in [PR #N](url)". {{BASE}} may have moved since the design was drawn: `git merge origin/{{BASE}}` before red,
-  and again before pr.
+- Then phases 1 to 7 as usual, under the brief's size cap (the signed-off pages themselves don't count). In the pr
+  phase, change this branch's README row(s) from "Building on" to "Built in [PR #N](url)". {{BASE}} may have moved since
+  the design was drawn: `git merge origin/{{BASE}}` before red, and again before pr.
 
 ## Context guard and hand-off
 

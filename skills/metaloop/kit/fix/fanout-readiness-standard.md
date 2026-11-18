@@ -26,3 +26,6 @@ the branches, move the shared piece into an earlier wave both depend on, or sett
     proved by one of its tasks.
 *   **Proportion**: branches are small enough for one chain (a handful of files, roughly a day of work), and no wider a
     split than the dependencies allow; a branch per file is not a goal.
+*   **Reviewable size**: every build branch's pull request fits the plan's line cap (added plus removed, tests
+    included), with an estimate the code makes believable. A branch that won't fit is split by task, the later part
+    depending on the earlier, before anyone builds it.

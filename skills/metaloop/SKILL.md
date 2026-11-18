@@ -35,9 +35,9 @@ questions in one batch, each with its recommended answer first:
 >    only when a person must sign in.
 > 2. **Plan**: with EGM. We design it together (`/egm:egm-brainstorm`, `/egm:egm-draft`), fresh reviewers with none of
 >    our conversation pick the design apart (`/egm:egm-review`), and you approve it. I split the approved design into
->    branches (each with its own files, the journeys it delivers and its tasks, each with the test that proves it),
->    fresh reviewers check the split for collisions, and it goes on a page for your sign-off. Nothing starts before you
->    sign it off.
+>    branches (each with its own files, the journeys it delivers and its tasks, each with the test that proves it, and
+>    each small enough for a pull request of at most **400** changed lines), fresh reviewers check the split for
+>    collisions, and it goes on a page for your sign-off. Nothing starts before you sign it off.
 > 3. **Fix**: parallel chains, each fix on its own branch in its own worktree: failing test first, fix, docs, the full
 >    gate, security review, PR, CI. UI and stored-data changes stop at a page for your sign-off before they're built.
 >    Each chain has its own live page: where it is, what it has done, and what it is asking you. Here I only post the
@@ -53,6 +53,7 @@ questions in one batch, each with its recommended answer first:
 | Who does what (the crew)? | `frontier`: the best measured model per role (Opus 5.5 researches, codes and verifies, Fable 5.2 plans) · `mixed`: Gemini researches, Codex plans, Claude codes and verifies · `clean-code`: Claude plans, Codex codes · `budget` · one agent throughout (`claude`, `codex`, `gemini`, `grok`) · your own mix. Recommend among the crews whose agents this machine has (`crew.py check`). |
 | How much of its memory may a session use? | Hand off at 65%, stop at 72% (never past 75%) |
 | How many fixes at once? | 5 · 3 (lighter on the machine) · 8 (faster, more gate contention) |
+| How big may one PR be? | 400 changed lines, tests included · 250 (quicker reviews, more PRs) · no cap. Lockfiles, generated files and signed-off mockup and schema pages don't count. |
 | When may the run stop and wait for you? | Only for a sign-in a person must do · for anything it can't do itself |
 | Who merges? | You do · I may merge once CI and the review round are green |
 
@@ -111,6 +112,13 @@ Write the answers into the runbook as the run's hard rules (step 0). If the owne
     (`live_sync.py --attention`), and again in every status update until it is answered. Live pages are built in the run
     folder as `*.live.html`, which the repo ignores: they are never committed (signed-off mockups and schema pages still
     are).
+12. **Every PR is small.** No pull request changes more than `PR_MAX_LINES` lines (400 unless the owner chose otherwise),
+    added plus removed, tests included, as GitHub counts them; lockfiles, generated files and signed-off mockup and
+    schema pages don't count. The plan gives every build branch an estimate (`est_lines`) under its cap, and
+    `sign_plan.py` refuses one without it or over it. A chain checks with `task.py size` as it builds; `task.py` refuses
+    to open or hand over a PR over the cap, and the chain stops for a split instead of trimming tests or packing code to
+    fit. Only the owner raises a cap: for one branch in the plan (`max_lines` with `max_lines_why`), or mid-run
+    (`task.py cap`).
 
 ## The lifecycle
 
@@ -120,7 +128,7 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
 
 ### 0. Set up (orchestrator + owner)
 - Agree the hard rules with the owner (the set-up questions in "Proposing it") and write them into the run's runbook: the ceiling, the crew, the pause
-  rule, budgets, the approved database writes, who merges.
+  rule, the PR size cap (`PR_MAX_LINES`), budgets, the approved database writes, who merges.
 - The crew, once per repository: `python3 "${CLAUDE_SKILL_DIR}/kit/common/crew.py" use <preset>` (and `set <role>=<pin>`
   for any role the owner wants on another agent) writes `.metaloop/crew.json`; commit it. `crew.py presets` marks which
   crews this machine can run, `use auto` takes the first of them, and `crew.py check` says whether each agent is
@@ -165,9 +173,10 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
   `docs/designs/<feature>.md`, `/egm:egm-review` and `/egm:egm-resolve` until no Blocker or Major is open. The owner
   approves it (`Status: Approved`) and merges its PR into the base: chains read it there.
 - **Hand it off**: `egm_plan.py import <design> plan.json`; draw up the branches (`files`, `cujs`, `depends_on`, `wave`,
-  `tasks` with tests); `egm_plan.py check plan.json` until ok; `egm_plan.py render plan.json fanout.md` and have EGM's
-  Goldfish review the split (`/egm:egm-review-loop` with `fanout_readiness.md`); fix `plan.json` and re-render until it
-  converges. Then the plan page and sign-off below; `sign_plan.py` runs the check again.
+  `tasks` with tests, `est_lines` under the PR cap); `egm_plan.py check plan.json` until ok;
+  `egm_plan.py render plan.json fanout.md` and have EGM's Goldfish review the split (`/egm:egm-review-loop` with
+  `fanout_readiness.md`); fix `plan.json` and re-render until it converges. Then the plan page and sign-off below;
+  `sign_plan.py` runs the check again.
 - **Without EGM** (`PLANNER=grill`, [reference/orchestrator.md](reference/orchestrator.md), "Planning (Every Fix Run)"):
   grill the owner in rounds (the `grilling` skill) on the plan page: each round is every question
   that can be answered now, numbered, each with a recommendation. Facts come from the agents, never from the owner.
@@ -175,8 +184,9 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
   the answers from the page (`ArtifactData` list `answers`), record each as the decision's `decided`, and work out the
   next round; the `domain-modeling` skill writes each decision and term down as it lands.
 - When no question is left, draw up `plan.json`: defects (why with file:line, fix, size, gate), the decisions by round,
-  branches by wave (wave 1 has no gate, wave 2 needs a mockup, wave 3 a schema page), each with a `title` and its `tasks`,
-  each task with the test that proves it.
+  branches by wave (wave 1 has no gate, wave 2 needs a mockup, wave 3 a schema page), each with a `title`, its `tasks`,
+  each task with the test that proves it, and `est_lines`: its PR's size, under the cap (`pr_size.py plan plan.json`
+  lists them; [reference/orchestrator.md](reference/orchestrator.md), "Sizing Branches").
 - Either way: `plan_page.py`, publish (an EGM plan's page links the design and shows each branch's files and journeys);
   the owner signs off on the page; `sign_plan.py plan.json "<when>" "<who>"`.
 
@@ -189,7 +199,8 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
   ends or asks, and every `LIVE_SYNC_MIN` minutes with progress. Loops and watchers keep the computer awake; a closed
   lid still sleeps a laptop, so tell the owner to keep it open and plugged in. Each time: sync the pages, then post
   exactly the lines `live_sync.py --attention` prints. Relay each answer from a page with `task.py answer` (requeue a
-  stopped chain).
+  stopped chain). A chain that stops over its size cap proposes a split: the owner decides it, and the plan changes
+  ([reference/orchestrator.md](reference/orchestrator.md), "A Chain Over Its Size Cap").
 - Each chain ends `awaiting_owner` with a PR, green CI and its review comments as proposals.
 
 ### 4. Design the gated waves

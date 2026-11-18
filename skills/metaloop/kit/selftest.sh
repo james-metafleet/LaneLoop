@@ -238,9 +238,72 @@ check "plan_page prints the capabilities to publish it with" grep -q '"comments"
 check "... where only the owner writes the answers and the sign-off" \
     sh -c "grep -q '\"path\": \"answers\", \"read\": \"view\", \"write\": \"owner\"' '$T/plan_page.out' && grep -q '\"path\": \"signoff\", \"read\": \"view\", \"write\": \"owner\"' '$T/plan_page.out'"
 
+echo "== PR size: the plan sizes every branch under the cap, and a chain can't open a PR over it"
+gitc() { git -c user.name=Selftest -c user.email=selftest@example.com "$@"; }
+cp "$T/fix/plan.example.json" "$T/fix/plan-s.json"
+size_edit() { "$PY" -c "import json,sys; p=json.load(open(sys.argv[1], encoding='utf8')); exec(sys.argv[2]); json.dump(p, open(sys.argv[1], 'w', encoding='utf8'))" "$T/fix/plan-s.json" "$1"; }
+size_edit "[d.update(decided=d['recommend']) for d in p['decisions']]; del p['branches'][0]['est_lines']"
+check "sign_plan refuses a build branch with no size estimate" sh -c "(cd '$T/fix' && '$PY' sign_plan.py plan-s.json 2026-11-18 Selftest) 2>&1 | grep -q 'retry-current-customer has no est_lines'"
+size_edit "p['branches'][0]['est_lines'] = 520"
+check "sign_plan refuses a branch estimated over the run's cap (PR_MAX_LINES, 400 by default)" sh -c "(cd '$T/fix' && '$PY' sign_plan.py plan-s.json 2026-11-18 Selftest) 2>&1 | grep -q 'estimated at 520 changed lines, over its cap of 400'"
+size_edit "p['branches'][0]['max_lines'] = 600"
+check "... and a branch's own cap with no reason for it" sh -c "(cd '$T/fix' && '$PY' sign_plan.py plan-s.json 2026-11-18 Selftest) 2>&1 | grep -q 'no max_lines_why'"
+size_edit "p['branches'][0]['max_lines_why'] = 'one generated client, reviewed as a whole'"
+check "sign_plan accepts a branch's own cap with its reason (the owner signs it off with the plan)" sh -c "cd '$T/fix' && '$PY' sign_plan.py plan-s.json 2026-11-18 Selftest >/dev/null"
+(cd "$T/fix" && "$PY" make_briefs.py plan-s.json --wave 1 >/dev/null && "$PY" make_briefs.py plan-s.json --wave 2 >/dev/null)
+check "a build brief carries its cap and the plan's estimate" \
+    grep -q "^Size cap: 600 changed lines, tests included (planned at about 520); .* set this branch's own cap: one generated client" "$T/fix/briefs/retry-current-customer.md"
+check "a design brief carries the cap it builds under after its sign-off" \
+    grep -q '^Size cap: 400 changed lines, tests included, once it builds after the sign-off' "$T/fix/briefs/order-panel-not-syncing.md"
+check "with PR_MAX_LINES=0 no branch needs an estimate" "$PY" -c "import sys; sys.path.insert(0, sys.argv[1]); import pr_size; assert pr_size.plan_problems({'branches': [{'slug': 'x'}]}, {'PR_MAX_LINES': '0'}) == []" "$T/fix"
+(cd "$T/fix" && "$PY" plan_page.py plan-s.json "$T/plan-s.html" "Size Plan" >/dev/null 2>&1)
+check "plan_page gives the page the run's cap, to show each branch's size and hold the sign-off" \
+    sh -c "grep -q '\"pr_max_lines\": 400' '$T/plan-s.html' && grep -q 'sizeIssue' '$T/plan-s.html'"
+
+SB="$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1]))['BASE'])" "$T/fix/loop.json")"
+MD="$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1]))['MOCKUPS_DIR'])" "$T/fix/loop.json")"
+S="$T/size"; mkdir -p "$S"
+git init -q --bare "$S/origin.git" && git init -q -b "$SB" "$S/wt" && git -C "$S/wt" remote add origin "$S/origin.git"
+lines() { "$PY" -c "import sys; print('\n'.join('line %d' % i for i in range(int(sys.argv[1]))))" "$1"; }
+(cd "$S/wt" && mkdir -p src && lines 1000 > src/big.py && printf '.fixloop/\n' > .gitignore && git add -A && gitc commit -qm base \
+    && git push -q origin "$SB" 2>/dev/null && git checkout -q -b ai-work/size)
+(cd "$S/wt" && lines 250 > src/feature.py && mkdir -p tests && lines 50 > tests/test_feature.py && lines 3000 > package-lock.json \
+    && mkdir -p "$MD" && lines 500 > "$MD/panel.html" && lines 800 > src/client_gen.py && printf 'src/client_gen.py linguist-generated=true\n' > .gitattributes \
+    && printf '\0\1\2binary' > logo.png && git add -A && gitc commit -qm feature)
+(cd "$S/wt" && git mv src/big.py src/moved.py && sed -i.bak 's/^line 5$/line five/' src/moved.py && rm -f src/moved.py.bak && git add -A && gitc commit -qm move)
+sz() { "$PY" -c "import sys; sys.path.insert(0, sys.argv[1]); import pr_size; s = pr_size.count(sys.argv[2]); print(s['total'], s['added'], s['removed'])" "$T/fix" "$S/wt"; }
+# 250 + 50 + the .gitattributes line, the moved file's one changed line (+1 -1); not the lockfile, the signed-off page,
+# the generated client or the binary
+check "size counts added plus removed lines, tests included, against the base" test "$(sz)" = "303 302 1"
+check "... skipping the lockfile, the signed-off mockup, a linguist-generated file and a binary" "$PY" -c "
+import sys; sys.path.insert(0, sys.argv[1]); import pr_size
+s = dict(pr_size.count(sys.argv[2])['skipped'])
+assert s.get('package-lock.json') == 'lockfile' and s.get(sys.argv[3] + '/panel.html') == 'signed-off page', s
+assert 'generated' in s.get('src/client_gen.py', '') and s.get('logo.png') == 'binary', s" "$T/fix" "$S/wt" "$MD"
+(cd "$S/wt" && lines 40 > src/scratch.py)
+check "... and work not committed yet, so a chain sees its size before it commits" test "$(sz | cut -d' ' -f1)" = 343
+mkdir -p "$S/wt/.fixloop"
+printf '# Fix branch `size`\n\nPlan signed off: 2026-11-18 by Selftest\nSize cap: 400 changed lines, tests included (planned at about 300). See the runbook\n' > "$S/wt/.fixloop/brief.md"
+echo '{"slug":"size","status":"in_progress","phase":"green","pr":null,"notes":[],"reviews":[],"summary":""}' > "$S/wt/.fixloop/status.json"
+st() { (cd "$S/wt" && "$PY" "$T/fix/task.py" "$@"); }
+check "task.py size reports the branch within its cap" sh -c "cd '$S/wt' && '$PY' '$T/fix/task.py' size | grep -q '^343 of 400 changed lines'"
+check "the pr phase goes ahead within the cap" sh -c "cd '$S/wt' && '$PY' '$T/fix/task.py' phase pr 'open the PR' >/dev/null"
+(cd "$S/wt" && lines 120 > src/more.py)
+check "task.py size exits 1 over the cap" sh -c "! (cd '$S/wt' && '$PY' '$T/fix/task.py' size) >/dev/null"
+check "the pr phase is refused over the cap" sh -c "! (cd '$S/wt' && '$PY' '$T/fix/task.py' phase pr 'open the PR') >/dev/null 2>&1"
+check "... the refusal says how to stop for a split, and not to trim tests to fit" \
+    sh -c "(cd '$S/wt' && '$PY' '$T/fix/task.py' phase pr x 2>&1) | grep -q 'task.py needs \"over the size cap: 463 of 400 lines' && (cd '$S/wt' && '$PY' '$T/fix/task.py' phase pr x 2>&1) | grep -q \"Don't trim tests\""
+check "ready is refused over the cap too (review items pushed later count)" sh -c "! (cd '$S/wt' && '$PY' '$T/fix/task.py' ready 'PR #1') >/dev/null 2>&1"
+check "... and needs still stops the chain" sh -c "cd '$S/wt' && '$PY' '$T/fix/task.py' needs 'over the size cap: 463 of 400 lines; split: T1 here, T2 later' >/dev/null && test \"\$('$PY' '$T/fix/task.py' status)\" = needs_owner"
+st cap 500 "the owner kept T2 here: one migration, reviewed whole" >/dev/null
+check "a cap the owner raises (task.py cap) lets the pr phase go ahead" sh -c "cd '$S/wt' && '$PY' '$T/fix/task.py' phase pr 'open the PR' >/dev/null"
+check "... and leaves a note saying who raised it and why" sh -c "(cd '$S/wt' && '$PY' '$T/fix/task.py' show) | grep -q 'SIZE CAP now 500 changed lines (.*): the owner kept T2'"
+printf '# Design branch `size`\n\nMode: design. Deliver: mockup\nSize cap: 100 changed lines, tests included, once it builds after the sign-off\n' > "$S/wt/.fixloop/brief.md"
+echo '{"slug":"size","status":"in_progress","phase":"design","pr":null,"notes":[],"reviews":[],"summary":""}' > "$S/wt/.fixloop/status.json"
+check "a design branch hands over its pages at any size (it opens no PR until it builds)" sh -c "cd '$S/wt' && '$PY' '$T/fix/task.py' ready 'design: docs/mockups/panel.html' >/dev/null"
+
 echo "== EGM planner: an approved design fans out into branches that are checked before sign-off"
 E="$T/egm"; mkdir -p "$E/repo/docs/designs"
-gitc() { git -c user.name=Selftest -c user.email=selftest@example.com "$@"; }
 git init -q --bare "$E/origin.git" && git init -q -b develop "$E/repo" && git -C "$E/repo" remote add origin "$E/origin.git"
 D="$E/repo/docs/designs/webhooks.md"
 cat > "$D" <<'EOF'
@@ -388,11 +451,20 @@ check "check: a file the design doesn't list" grep -q "dispatch changes src/othe
 check "check: a dependency in the same wave" grep -q "a dependency goes in an earlier wave" "$E/check1.out"
 check "sign_plan refuses a fan-out that fails the check" sh -c "! (cd '$E/run' && '$PY' sign_plan.py plan.json 2026-11-13 Selftest) >/dev/null 2>&1"
 egm_edit "b=p['branches']; b[0]['files']=['src/webhooks/signing.py']; b[1].update(wave=2, cujs=['CUJ1', 'CUJ2']); b[1]['files'].remove('src/other.py')"
+check "check: a build branch with no size estimate" grep -q "branch sign has no est_lines" "$E/check1.out"
+(cd "$E/run" && "$PY" egm_plan.py check plan.json > "$E/check2.out" 2>&1)
+check "check: ... still refused once the files and journeys are sound" grep -q "branch dispatch has no est_lines" "$E/check2.out"
+egm_edit "b=p['branches']; b[0]['est_lines']=120; b[1]['est_lines']=650"
+(cd "$E/run" && "$PY" egm_plan.py check plan.json > "$E/check3.out" 2>&1)
+check "check: a branch estimated over the cap" grep -q "branch dispatch is estimated at 650 changed lines, over its cap of 400" "$E/check3.out"
+egm_edit "p['branches'][1]['est_lines']=310"
 check "check passes a sound fan-out: each file owned once, every journey delivered, the dependency a wave earlier" \
     sh -c "cd '$E/run' && '$PY' egm_plan.py check plan.json"
 (cd "$E/run" && "$PY" egm_plan.py render plan.json "$E/fanout.md" > /dev/null 2>&1)
 check "render writes the split for the Goldfish review: who owns each file, who delivers each journey" \
     sh -c "grep -qF '| \`src/events/bus.py\` | Modify | \`dispatch\` (2) |' '$E/fanout.md' && grep -qF '| CUJ2: A failed delivery is retried | \`dispatch\` |' '$E/fanout.md' && grep -q 'None: egm_plan.py check passes' '$E/fanout.md'"
+check "... and each branch's size against the cap, for the reviewers to judge" \
+    grep -qF '*   **Size:** about 310 changed lines, tests included (cap 400)' "$E/fanout.md"
 (cd "$E/run" && "$PY" sign_plan.py plan.json 2026-11-13 Selftest > /dev/null 2>&1 && "$PY" make_briefs.py plan.json --wave 2 > /dev/null 2>&1)
 B="$E/run/briefs/dispatch.md"
 check "sign_plan signs off a sound fan-out" grep -q '"at": "2026-11-13"' "$E/run/plan.json"
@@ -559,17 +631,24 @@ check "... handing back the same from-line, so a stop logged meanwhile is still 
 
 echo "== sleep: watchers keep the computer awake, and say so when it slept anyway"
 # A stand-in date whose wall clock jumps by the seconds in $T/skew: a computer that slept that long (Python's monotonic
-# clock, the awake clock, doesn't move)
-FAKECLOCK="$T/fakeclock"; mkdir -p "$FAKECLOCK"; REALDATE=$(command -v date); echo 0 > "$T/skew"
+# clock, the awake clock, doesn't move). A watcher's jump goes in $T/jump, and the stand-in sleep adds it to the skew as
+# its sleep ends, as a real sleep would: a jump written between two of a watcher's naps would land in neither.
+FAKECLOCK="$T/fakeclock"; mkdir -p "$FAKECLOCK"; REALDATE=$(command -v date); REALSLEEP=$(command -v sleep)
+echo 0 > "$T/skew"; : > "$T/jump"
 cat > "$FAKECLOCK/date" <<EOF
 #!/bin/sh
 if [ "\$1" = +%s ]; then echo \$(( \$("$REALDATE" +%s) + \$(cat "$T/skew") )); else exec "$REALDATE" "\$@"; fi
 EOF
-chmod +x "$FAKECLOCK/date"
+cat > "$FAKECLOCK/sleep" <<EOF
+#!/bin/sh
+"$REALSLEEP" "\$@"
+if [ -s "$T/jump" ]; then echo \$(( \$(cat "$T/skew") + \$(cat "$T/jump") )) > "$T/skew"; : > "$T/jump"; fi
+EOF
+chmod +x "$FAKECLOCK/date" "$FAKECLOCK/sleep"
 n2=$(wc -l < "$T/fix/logs/runner.log")
 ( cd "$T/fix" && PATH="$FAKECLOCK:$PATH" WAIT_POLL_SECS=1 LIVE_SYNC_SECS=0 WAIT_HOURS=8 ./wait_chain.sh "$n2" > "$T/wc3.out" 2>&1 ) & r=$!
-sleep 2; echo 32400 > "$T/skew"   # nine hours go by at once: past WAIT_HOURS, had the limit counted the wall clock
-wait_for 20 sh -c "! kill -0 $r"; kill $r 2>/dev/null; echo 0 > "$T/skew"
+echo 32400 > "$T/jump"   # nine hours go by during a nap: past WAIT_HOURS, had the limit counted the wall clock
+wait_for 20 sh -c "! kill -0 $r"; kill $r 2>/dev/null; echo 0 > "$T/skew"; : > "$T/jump"
 check "wait_chain: the computer slept, so it returns on waking, says for how long, and hands back the same from-line" \
     sh -c "grep -q 'the computer slept for 9h 00m' '$T/wc3.out' && grep -qx '== next from-line: $n2' '$T/wc3.out'"
 check "... a sleep longer than WAIT_HOURS is no timeout: the limit counts awake time" sh -c "! grep -q TIMEOUT '$T/wc3.out'"
@@ -762,8 +841,8 @@ check "wait_verify: a progress return hands back the same from-line, so a stop l
     sh -c "grep -q 'progress' '$T/wv.out' && grep -qx '== next from-line: $v0' '$T/wv.out'"
 v1=$(wc -l < "$T/ver/logs/loop.log")
 ( cd "$T/ver" && PATH="$FAKECLOCK:$PATH" WAIT_POLL_SECS=1 LIVE_SYNC_SECS=0 ./wait_verify.sh "$v1" > "$T/wv2.out" 2>&1 ) & r=$!
-sleep 2; echo 3000 > "$T/skew"
-wait_for 20 sh -c "! kill -0 $r"; kill $r 2>/dev/null; echo 0 > "$T/skew"
+echo 2970 > "$T/jump"   # under 50m: a nap's own second or two on a slow machine still reads as 50m (duration rounds up)
+wait_for 20 sh -c "! kill -0 $r"; kill $r 2>/dev/null; echo 0 > "$T/skew"; : > "$T/jump"
 check "wait_verify: the computer slept, so it returns on waking with the same from-line" \
     sh -c "grep -q 'the computer slept for 50m' '$T/wv2.out' && grep -qx '== next from-line: $v1' '$T/wv2.out'"
 

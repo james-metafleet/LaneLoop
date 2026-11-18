@@ -72,26 +72,30 @@ sign-off, so the owner signs the changed plan again.
 ## 3. Draw up the branches
 
 The same `branches` as any fix run ([fix-loop.md](fix-loop.md), "Briefs"; `plan.egm.example.json` in the run folder),
-each with three more fields:
+each with these fields:
 
 | Field | What |
 |---|---|
 | `files` | The design's files this branch creates or changes: its binding boundary. A file matching a design glob counts. |
 | `cujs` | The journeys it delivers (`CUJ1`, ...). Each is proved by one of its tasks. |
 | `depends_on` | Slugs it builds on. Each sits in an earlier wave, and this branch's wave starts after they merge. |
+| `est_lines` | Its pull request's estimated size, in changed lines with tests (a build branch, under `PR_MAX_LINES`). A branch that can't be split gets its own `max_lines` with `max_lines_why`, which the owner signs off with the plan. |
 
 - Split along the design's phases (EGM's readiness standard asks for stable, buildable phases): each phase's files
   become one or more branches of a wave.
 - One owner per file per wave. A piece several branches need (an interface, a schema, a registration, a shared fixture)
   goes in an earlier wave they all depend on.
 - Tests travel with the code they prove. Tasks are outcomes, each with the test that proves it.
+- Each build branch is one pull request of at most `PR_MAX_LINES` changed lines (400 by default), tests included: size
+  it with `est_lines` and aim for three quarters of the cap ([orchestrator.md](orchestrator.md), "Sizing Branches"). A
+  design phase too big for one PR becomes several branches, the later ones depending on the earlier.
 - Waves here order dependencies: wave 1 starts first, and each later wave starts once the branches it builds on merged.
   The sign-off gates still apply inside that order: a change users see needs its mockup signed off, a change to what is
   stored its schema page, before it is built. Make that a `mode: design` branch, and put the build after it in a later
   wave that depends on it (unless the approved design already has the signed-off mockup or schema it needs).
 - `python egm_plan.py check plan.json` until it says ok: the design on the base is the one imported and still Approved,
   every design file has an owner, no file has two owners in a wave, every dependency is in an earlier wave, every journey
-  is delivered, every build branch names its files.
+  is delivered, every build branch names its files and is sized within its cap.
 
 ## 4. Fan-out review (Goldfish)
 
@@ -111,10 +115,11 @@ python egm_plan.py render plan.json fanout.md
 ```
 
 The fan-out Goldfish (`fanout_readiness.md`, against `fanout-readiness-standard.md`) looks for hidden coupling within a
-wave, unowned work, missing dependencies, boundaries too narrow for their tests, and files that will conflict anyway. The
-readiness Goldfish checks each branch can be built without a design choice. `fanout.md` is rendered: apply what
-`/egm:egm-resolve` agrees to `plan.json`, re-render, and let the loop run until it converges (two clean rounds; at most
-five). A finding that needs the design changed goes back to step 1: draft, review, approve, merge, re-import.
+wave, unowned work, missing dependencies, boundaries too narrow for their tests, files that will conflict anyway, and
+size estimates the code can't support. The readiness Goldfish checks each branch can be built without a design choice.
+`fanout.md` is rendered: apply what `/egm:egm-resolve` agrees to `plan.json`, re-render, and let the loop run until it
+converges (two clean rounds; at most five). A finding that needs the design changed goes back to step 1: draft, review,
+approve, merge, re-import.
 
 ## 5. Sign-off
 
@@ -132,6 +137,8 @@ pages, `launch.sh ... start.sh queue-wave1.txt <MAX_PAR>`, `wait_chain.sh`. What
 - A chain stops with `needs` when a change falls outside its boundary or the design doesn't settle it. Answer from the
   design; if the design is wrong, take it back to EGM and re-import. Never widen a boundary into a file another branch of
   the same wave owns.
+- A chain that runs over its size cap stops with `needs` and a proposed split ([orchestrator.md](orchestrator.md), "A
+  Chain Over Its Size Cap"). The follow-up branch owns no design file another branch of its wave owns.
 - When a chain ends `awaiting_owner`, run `python egm_plan.py boundary plan.json <slug>` before telling the owner its PR
   is ready. Files outside the boundary (exit 1) are a finding for the owner; tests outside the list are expected.
 - A wave whose branches depend on earlier ones starts once those PRs merged: `make_briefs.py plan.json --wave <n>` then.

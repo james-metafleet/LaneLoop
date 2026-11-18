@@ -48,6 +48,11 @@ build it without touching anyone else's files, without waiting for someone in my
     tasks. A task proved by "manual" or "?" is a Major.
 *   **Merge conflicts.** Files that are not shared in the plan but are textually adjacent in practice (one list, one
     switch, one registration block, a lockfile) where parallel edits will conflict.
+*   **Size.** Each build branch is one pull request, capped at the number of changed lines the plan states (added plus
+    removed, tests included), and its Size line is an estimate. Judge it against the code: the files it changes, the
+    callers and tests a changed signature drags in, the tests each task needs. An estimate that can't hold (six files
+    and their tests at 120 lines) is a Major: a chain that runs over its cap stops mid-build for a split. Say which
+    tasks to move to a later branch that depends on this one.
 
 Don't re-review the design itself (its architecture, its goals): EGM's design review did that. Review the split.
 
