@@ -6,11 +6,14 @@ recorded, the branches drawn up). The owner's answers and sign-off live in the p
   python plan_page.py plan.json <out.html> "<Title, 2-4 words>"
 
 plan.json: decisions carry "round" (1, 2, ...; the open round is the lowest with an undecided decision) and "decided"
-once the owner's answer is recorded; branches carry "title" and "tasks" [{"id", "text", "test"}]. Read the answers with
-ArtifactData (collection "answers", ids d<n>), record each as the decision's "decided", and on the page's sign-off
-(collection "signoff", doc "plan") run sign_plan.py.
+once the owner's answer is recorded; branches carry "title", "tasks" [{"id", "text", "test"}] and, for a build branch,
+"est_lines" (its pull request's estimated size, within PR_MAX_LINES or its own "max_lines" with "max_lines_why"). Read
+the answers with ArtifactData (collection "answers", ids d<n>), record each as the decision's "decided", and on the
+page's sign-off (collection "signoff", doc "plan") run sign_plan.py.
 """
 import json, os, sys
+
+import pr_size
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 # Owner-only writes: Claude's answers, and the owner's own answers and sign-off (the plan's decisions are the owner's).
@@ -27,7 +30,8 @@ def main(a):
     esc = lambda s: s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     html = (html.replace("__TITLE__", esc(title))
                 .replace("/*__TWO_WAY__*/", open(os.path.join(HERE, "two_way.js"), encoding="utf8").read())
-                .replace("__PLAN__", json.dumps(dict(plan, page_title=title), ensure_ascii=False).replace("</", "<\\/")))
+                .replace("__PLAN__", json.dumps(dict(plan, page_title=title, pr_max_lines=pr_size.run_cap()),
+                                             ensure_ascii=False).replace("</", "<\\/")))
     open(a[1], "w", encoding="utf8", newline="\n").write(html)
     dec = plan.get("decisions", [])
     open_n = sum(1 for d in dec if not d.get("decided"))

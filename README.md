@@ -20,6 +20,10 @@ Gemini, planning on Codex, coding on Claude, or any mix you choose.
 
 - **Spec first.** Nothing is built before the owner signs off a plan: every branch broken into tasks, each with the
   test that proves it.
+- **Small pull requests.** Every PR changes at most 400 lines by default, tests included, so a reviewer can read it
+  properly. The plan sizes each branch under that cap before sign-off, and a chain that won't fit stops and proposes a
+  split instead of opening an oversized PR. Lockfiles, generated files and signed-off design pages don't count, and the
+  owner sets the cap per run (`PR_MAX_LINES`).
 - **Any agent, per role.** A run's crew pins an agent, model and effort for each role: research, plan, code and
   verify. Claude Code, Codex, Antigravity, Gemini CLI, Grok Build, OpenCode (any provider's model) and Cursor are all
   driven the same way. The ready-made crews are chosen from current benchmarks, SlopCodeBench among them.
@@ -182,7 +186,7 @@ split, and orchestrates the chains that build it.
 | Stage | Steps |
 |---|---|
 | Design (EGM) | `/egm:egm-brainstorm` → `/egm:egm-draft` → `/egm:egm-review` and `/egm:egm-resolve` → the owner approves and the design is merged |
-| Hand-off | `egm_plan.py import` → branches drawn up → `egm_plan.py check` → fan-out Goldfish review → the owner signs off |
+| Hand-off | `egm_plan.py import` → branches drawn up, each sized for one PR under the cap → `egm_plan.py check` → fan-out Goldfish review → the owner signs off |
 | Build (MetaLoop) | `make_briefs.py` → parallel chains (red, green, docs, gate, security, PR, CI) → review items → the owner merges |
 | After merge | `/egm:egm-drift-report` → the owner updates the design doc or the code → re-verify |
 

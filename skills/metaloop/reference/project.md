@@ -68,7 +68,8 @@ repository really builds and tests, then commit the file. Anything the presets d
  "chain_allow": ["npm test *", "npm run *"],
  "verify_allow": ["psql *"],
  "caps": {"payments": "start the payment provider's CLI listener as a verify service, then requeue the test"},
- "docs": {"mockups": "docs/mockups", "schema": "docs/schema-changes"}
+ "docs": {"mockups": "docs/mockups", "schema": "docs/schema-changes"},
+ "pr_size": {"exclude": ["src/generated/**", "*.pb.go"]}
 }
 ```
 
@@ -82,6 +83,7 @@ repository really builds and tests, then commit the file. Anything the presets d
 | `chain_allow`, `verify_allow` | Extra commands fix-chain and verify sessions may run (`"npm test *"` becomes `Bash(npm test *)`). Everything else stays denied. |
 | `caps` | For each capability a test may require, how the owner makes it available: the ask a blocked test carries. |
 | `docs` | Where design chains put mockups and schema-change pages (each folder has a README registry). |
+| `pr_size` | `exclude`: globs for files a pull request's size leaves out, on top of lockfiles, snapshots, minified and `linguist-generated` or `linguist-vendored` files, binaries and the signed-off pages ([orchestrator.md](orchestrator.md), "Sizing Branches"). For generated code the repository checks in. |
 
 In any command or env value, `{port}` `{slot}` `{dir}` `{id}` `{run}` `{root}` `{app_url}` `{app_port}` are filled in;
 nothing else in braces is touched, so shell, JSON and JavaScript in commands are safe. Commands run under bash (Git Bash

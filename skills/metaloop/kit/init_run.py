@@ -130,6 +130,10 @@ DEFAULTS = {
     # fix runs: who plans. egm = Google's Elephant-Goldfish Model designs and reviews (brainstorm, draft, Goldfish review),
     # egm_plan.py turns the approved design into the plan's branches; grill = grilling rounds on the plan page
     "PLANNER": "egm",
+    # fix runs: the most lines one pull request may change, added plus removed, tests included (lockfiles, generated files
+    # and signed-off mockup and schema pages don't count). The plan sizes every build branch under it before sign-off,
+    # and a chain stops for a split instead of opening a PR over it (pr_size.py). 0 = no cap
+    "PR_MAX_LINES": "400",
     "PYTHON": "python",                     # the interpreter every script, hook and allow-list entry names
     # gate: tests that fail only under shared load / on this platform's checkout; each must still pass when run alone
     "KNOWN_FLAKES": "",                     # comma-separated test names, as the test runner prints a failure

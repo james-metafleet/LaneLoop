@@ -21,7 +21,7 @@
      "recommend": "a", "decided": null}
   ],
   "branches": [
-    {"slug": "retry-current-customer", "title": "Retry Bills The Right Customer", "wave": 1, "mode": "build",
+    {"slug": "retry-current-customer", "title": "Retry Bills The Right Customer", "wave": 1, "mode": "build", "est_lines": 180,
      "defects": ["D2"], "tests": ["B2"],
      "scope": "BINDING scope in plain words: what to change, what not to touch, which decisions apply.",
      "tasks": [{"id": "T1", "text": "A retry bills the customer the order has when the retry runs",

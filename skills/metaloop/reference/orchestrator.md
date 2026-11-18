@@ -83,10 +83,32 @@ with `consult.py plan`, and carry its findings into the next draft. A run that s
 5. **Draw up the plan** on the same page: branches by wave (wave 1 = no gate, wave 2 = mockup-gated, wave 3 =
    schema-gated; a branch that depends on another waits for it), each with a `title`, its binding `scope` and its
    `tasks`: every outcome the branch delivers, each with the test that proves it (a design branch's tasks are what its
-   page must show). A branch with no tasks is not planned yet.
+   page must show), and, for a build branch, `est_lines` under the PR cap ("Sizing Branches" below). A branch with no
+   tasks is not planned yet.
 6. **Sign-off.** The page's Sign Off button (collection `signoff`, doc `plan`) or the owner's own words; never a bare
-   "done" with nothing answered. Then `sign_plan.py plan.json "<when>" "<who>"`: it refuses while a decision is open or
-   a branch has no tasks, and `make_briefs.py` refuses until it has run.
+   "done" with nothing answered. Then `sign_plan.py plan.json "<when>" "<who>"`: it refuses while a decision is open, a
+   branch has no tasks, or a build branch is unsized or over its cap, and `make_briefs.py` refuses until it has run.
+
+## Sizing Branches
+
+Every build branch becomes one pull request of at most `PR_MAX_LINES` changed lines (400 unless the owner chose
+otherwise): added plus removed, tests included, as GitHub counts them. Lockfiles, snapshots, minified and
+`linguist-generated` files, binaries and the signed-off mockup and schema pages don't count, nor does anything matching
+the profile's `pr_size.exclude` ([project.md](project.md)). A reviewer reads a small PR properly and skims a big one;
+the cap is how the run keeps every PR reviewable.
+
+- **Estimate** each build branch's `est_lines` from the research, not from hope: each file's change (the design's
+  Proposed Changes, the consults' file:line evidence), the callers and tests a changed signature drags in, a test per
+  task (usually as many lines as the code it proves), and the docs. A defect's `size` (S, M, L) is a hint, not a count.
+- **Aim for three quarters of the cap.** Estimates run low, and a chain that runs over stops mid-build for a split.
+- **Split by task** when a branch won't fit: each task moves with its test, and a branch that builds on another
+  depends on it (a later wave). Never split a task across branches, and never split off the tests.
+- **A branch that can't be split** (one generated client, a rename across many files, a migration reviewed as one):
+  give it `max_lines` with `max_lines_why`. The plan page shows both, and the owner's sign-off approves the exception.
+- `pr_size.py plan plan.json` lists every branch's estimate against its cap; `sign_plan.py` (and, for an EGM plan,
+  `egm_plan.py check`) refuses a build branch with no estimate, or one over its cap. Design branches need no estimate:
+  the chain that builds after the sign-off keeps to the same cap, so if the signed-off page clearly needs more, split
+  the build before you requeue it (below).
 
 ## Decisions After The Plan
 
@@ -96,6 +118,24 @@ with `consult.py plan`, and carry its findings into the next draft. A run that s
   `acknowledge_duplicate` for a reply that adds a new decision.
 - Record every decision in the plan (`"decided"`), the feature's decisions log in the repo when the branch ships, and
   memory when it is a standing rule.
+
+## A Chain Over Its Size Cap
+
+A chain checks its size with `task.py size` as it builds, and `task.py` refuses the pr phase, and `ready`, over its cap.
+So a chain that won't fit stops with `needs`: "over the size cap: N of CAP lines; split: <tasks that stay> here, <tasks
+that move> to a follow-up branch". Its commits stay on the branch. The ask is on its live page; the choice is the
+owner's, because the plan changes.
+
+- **Split** (the usual answer): add the follow-up branch to `plan.json` with the tasks that move, their tests and an
+  `est_lines`, in a later wave that `depends_on` the stopped branch; take those tasks out of the stopped branch. Run
+  `pr_size.py plan plan.json`, re-render and republish the plan page, and once the owner agrees, record it with
+  `sign_plan.py` again. Then `task.py note "SPLIT (<owner>, <when>): this branch keeps T1, T2; T3 moved to <slug>"` in
+  the stopped branch (its brief is already copied, so the note carries the change), requeue it, and run the follow-up's
+  brief with its wave (`make_briefs.py plan.json --slugs <slug>` once the branch it depends on merges).
+- **Raise the cap** for this branch only, when the owner says so: `task.py cap <lines> "<their reason>"` in the branch's
+  worktree, and the same `max_lines` and `max_lines_why` in `plan.json`, so the plan says what was agreed. Then requeue.
+- Review items that would take an open PR over its cap stop the same way: the items that fit are pushed, and the rest
+  go to a follow-up branch or a ticket, as the owner decides.
 
 ## Live Pages
 

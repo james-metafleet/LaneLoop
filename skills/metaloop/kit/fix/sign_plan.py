@@ -4,14 +4,16 @@
 
 Only on an explicit sign-off: the page's Sign off button (its signoff doc in the page's database) or the owner's own
 words. Refuses while a decision is undecided or a branch has no tasks: planning means every question answered and every
-branch broken into tasks, each with the test that proves it. A plan imported from an EGM design (egm_plan.py import)
-must also pass egm_plan.py check: the approved design on the base, every design file owned, no file shared within a wave,
-every journey delivered.
+branch broken into tasks, each with the test that proves it. Refuses a build branch with no size estimate (est_lines), or
+one over its cap (PR_MAX_LINES, or its own max_lines with a max_lines_why): pr_size.py. A plan imported from an EGM
+design (egm_plan.py import) must also pass egm_plan.py check: the approved design on the base, every design file owned,
+no file shared within a wave, every journey delivered.
 """
 import json, os, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import egm_plan  # noqa: E402
+import pr_size  # noqa: E402
 
 
 def main(a):
@@ -23,9 +25,11 @@ def main(a):
     problems += [f"branch {b['slug']} has no tasks" for b in plan.get("branches", []) if not b.get("tasks")]
     problems += [f"branch {b['slug']} task {t.get('id')} has no test that proves it"
                  for b in plan.get("branches", []) if b.get("mode", "build") == "build" for t in b.get("tasks", []) if not t.get("test")]
+    problems += pr_size.plan_problems(plan)
     if plan.get("design"):
         c = egm_plan.conf()
         problems += egm_plan.check(plan, c.get("REPO", "."), c.get("BASE", "develop"))
+    problems = list(dict.fromkeys(problems))  # egm_plan.check sizes the branches too
     if problems:
         raise SystemExit("not signed off: " + "; ".join(problems))
     plan["signed_off"] = {"at": when, "by": who}

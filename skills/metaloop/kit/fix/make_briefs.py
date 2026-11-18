@@ -6,13 +6,17 @@
 A brief is the chain's whole task: binding scope, the defects with their why and fix, its tasks (each with the test that
 proves it), the investigation notes, the tests that re-verify it, and what "done" means for its mode (build or design).
 Refuses a plan the owner hasn't signed off (sign_plan.py); every brief carries a "Plan signed off:" line, and the runner
-starts no branch without one. Never overwrites a brief a chain already copied: a running branch reads .fixloop/brief.md,
-so change scope through a task.py note instead.
+starts no branch without one. Each brief also carries the branch's "Size cap:" (PR_MAX_LINES, or the branch's own
+max_lines) with the plan's estimate: task.py refuses to open or hand over a pull request over it (pr_size.py). Never
+overwrites a brief a chain already copied: a running branch reads .fixloop/brief.md, so change scope through a task.py
+note instead.
 
 A plan imported from an EGM design (egm_plan.py import) adds to each brief: the design as the spec (path and hash), the
 files the branch may create or change (its boundary), the journeys it delivers, and the design's verification steps.
 """
 import argparse, fnmatch, json, os
+
+import pr_size
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DONE = {
@@ -90,6 +94,16 @@ def main():
         if design:
             out.append(f"Design: `{design['path']}` (EGM, {design.get('status', 'Approved')}, sha256 {design['sha256'][:12]}), "
                        "on the base, so it is in your worktree")
+        cap = pr_size.branch_cap(b)
+        if cap:
+            line = f"Size cap: {cap} changed lines, tests included"
+            if mode == "design":
+                line += ", once it builds after the sign-off"
+            elif b.get("est_lines"):
+                line += f" (planned at about {b['est_lines']})"
+            if b.get("max_lines") is not None and b.get("max_lines_why"):
+                line += f"; {plan.get('owner', 'the owner')} set this branch's own cap: {b['max_lines_why']}"
+            out.append(line + ". See the runbook's size rule; `task.py size` measures it")
         if b.get("depends_on"):
             out.append(f"Builds on: {', '.join(b['depends_on'])} (merged into the base before this branch started)")
         if plan.get("base_note"):

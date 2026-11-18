@@ -13,6 +13,7 @@ sign-off), on whichever agent that pin names: `agent_run.py` starts it ([crew.md
 | `runner.sh` | Runs a queue file's chains, `MAX_PAR` at a time, starting the next as one ends; logs every start and end to `logs/runner.log` and raises a toast. Several runners can share the log. |
 | `task.py` | The branch's state (`.fixloop/status.json`): phase, notes, PR, review proposals, questions for the owner, tasks done, final state. Sessions change state only through it. |
 | `live_page.py`, `live_sync.py` | The branch's live page (`live/<slug>.live.html`, never committed) and the writes that keep it current from `status.json`. The main session publishes and syncs them; chains never touch them. |
+| `pr_size.py` | The branch's pull request size against its cap (`PR_MAX_LINES`, 400 by default): added plus removed lines, tests included, lockfiles, generated files and signed-off pages left out. `task.py size` runs it; `task.py` refuses the pr phase and `ready` over the cap. |
 | `gate.py` | The pre-PR gate: every step the project profile names (builds, linters, test suites), detached, with lock slots per step, and each slot's own instances of the services a step needs. A suite fails on more failures than known-flake names matched, named or not, and on zero tests run. |
 | `runbook.md` | Appended to every session's system prompt: the standing overrides, the phases, each mode's rules, the hand-off format. |
 | `settings.json` | Permissions (allow and deny lists) and the hooks: `ctx_guard.py` after every tool call, `end_gate.py` on stop. |
@@ -31,6 +32,9 @@ the owner can answer; the summary is the exact ask), `blocked` (outside the task
   the next session reads first, redoing the part if the answer differs from what it carried on with.
 - **Tasks:** the brief lists the branch's tasks, each with the test that proves it; `task.py done T1 "<how>"` ticks one,
   and every task is ticked before the pr phase. The live page shows them.
+- **Size:** the brief's `Size cap:` line is the most lines the branch's pull request may change. The chain checks with
+  `task.py size` after green and before the pr phase; over the cap it stops with `needs` and a proposed split by task,
+  never trims tests or packs code to fit. Only the owner raises a cap (`task.py cap`, main session).
 - **Plain words:** the live page shows the chain's phase lines, notes and questions as written, so the runbook asks for
   plain words (what changed for the user or the system) and keeps file:line for commits and HANDOFF.md.
 
@@ -93,9 +97,10 @@ approval) and the owner merging. Never give a chain's account more rights than t
 ## Briefs
 
 A good brief has: the binding scope in plain words (what to change, what not to touch, which decisions apply and how),
-the defects with their why (file:line) and fix, the investigation notes, the tests that re-verify it after merge, and what
-"done" means for its mode. Say where line numbers came from (they drift). Put a decision the owner made into the scope in
-their words. Keep anything that needs a design or schema sign-off out of a build brief, or make it a design brief.
+the defects with their why (file:line) and fix, the investigation notes, the tests that re-verify it after merge, its
+size cap with the plan's estimate, and what "done" means for its mode. Say where line numbers came from (they drift).
+Put a decision the owner made into the scope in their words. Keep anything that needs a design or schema sign-off out of
+a build brief, or make it a design brief.
 
 ## Watching and finishing
 
