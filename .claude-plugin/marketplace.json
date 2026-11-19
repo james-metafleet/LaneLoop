@@ -1,15 +1,18 @@
 {
-  "name": "metaloop",
-  "description": "MetaLoop: spec-first, parallel, context-efficient engineering loops on any mix of coding agents and models.",
+  "name": "laneloop",
+  "description": "LaneLoop: spec-first, parallel, context-efficient engineering loops on any mix of coding agents and models.",
   "owner": {
     "name": "jomitiron",
     "url": "https://github.com/jomitiron"
   },
   "plugins": [
     {
-      "name": "metaloop",
+      "name": "laneloop",
       "source": "./",
       "description": "Run large engineering work as unattended coding-agent loops with owner gates: plan with Google's EGM, fan out parallel fix chains in git worktrees, live-verify the app end to end, with any agent and model per role."
     }
-  ]
+  ],
+  "renames": {
+    "metaloop": "laneloop"
+  }
 }
