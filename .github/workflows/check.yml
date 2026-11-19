@@ -26,4 +26,4 @@ jobs:
       - name: Validate the plugin and the marketplace
         run: claude plugin validate .
       - name: Kit self-test
-        run: bash skills/metaloop/kit/selftest.sh
+        run: bash skills/laneloop/kit/selftest.sh
