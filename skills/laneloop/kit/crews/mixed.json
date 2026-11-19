@@ -1,0 +1,16 @@
+{
+ "name": "mixed",
+ "group": "recommended",
+ "about": "Three vendors, each in a role it measured well: Gemini researches, Codex plans, Claude codes and verifies. A second vendor's view of the design catches what one model's blind spots miss.",
+ "research": "agy/gemini-4-carbon:high",
+ "plan": "codex/gpt-6-astra:xhigh",
+ "code": "claude/claude-opus-5-5[1m]:high",
+ "verify": "claude/claude-opus-5-5[1m]:xhigh",
+ "why": {
+  "research": "Gemini 4 Carbon: 63.7 on SWE-Atlas-QnA, within a few points of the leaders, at a fraction of their cost.",
+  "plan": "GPT-6 Astra at xhigh: least verbose code and best strict solve on SlopCodeBench, third on LibraryDesignBench; an independent design view from the model that will not write the code.",
+  "code": "Opus 5.5: joint first on Terminal-Bench 4.1; best value in SlopCodeBench's top ten.",
+  "verify": "Opus 5.5 at xhigh, as LaneLoop has always verified."
+ },
+ "as_of": "2026-11-16"
+}

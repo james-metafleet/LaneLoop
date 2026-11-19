@@ -1,6 +1,6 @@
 # Evals
 
-Behaviour checks for the skill: given a request phrased the way a person would type it, does Claude pick up MetaLoop
+Behaviour checks for the skill: given a request phrased the way a person would type it, does Claude pick up LaneLoop
 and do what SKILL.md says? Each case is a folder with a `prompt.md` (the request) and `graders/` (what a good answer
 must do), run with Claude Code's `claude plugin eval`.
 
@@ -18,7 +18,7 @@ must do), run with Claude Code's `claude plugin eval`.
 
 ## Run them
 
-From the repository root (the plugin; the skill is `metaloop:metaloop`):
+From the repository root (the plugin; the skill is `laneloop:laneloop`):
 
 ```bash
 claude plugin eval . --judge-model sonnet

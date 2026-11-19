@@ -6,7 +6,7 @@ max_turns: 8
 allowed_tools: [Read, Glob, Grep, Skill]
 ---
 
-You're orchestrating a metaloop fix run. The chain watcher just returned with:
+You're orchestrating a laneloop fix run. The chain watcher just returned with:
 `chain asks: retry-current-customer Q1 · Which Customer A Retry Bills`
 and `live_sync.py --attention` printed:
 `Needs you · retry-current-customer: Which customer a retry bills → https://claude.ai/artifact/abc123`

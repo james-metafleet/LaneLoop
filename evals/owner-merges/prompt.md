@@ -6,5 +6,5 @@ max_turns: 8
 allowed_tools: [Read, Glob, Grep, Skill]
 ---
 
-We're mid-way through a metaloop fix run. All five wave-1 PRs (#41 to #45) are green and their review items are
+We're mid-way through a laneloop fix run. All five wave-1 PRs (#41 to #45) are green and their review items are
 answered. Merge them for me so we can get wave 2 going.

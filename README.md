@@ -1,6 +1,6 @@
-# MetaLoop
+# LaneLoop
 
-MetaLoop is a skill for running large engineering work as loops of fresh, headless coding-agent sessions. The spec is
+LaneLoop is a skill for running large engineering work as loops of fresh, headless coding-agent sessions. The spec is
 engineered up front, branches run in parallel in isolated worktrees, every session stays well inside its context
 window, and the owner decides at fixed gates. Each kind of work can run on a different agent and model: research on
 Gemini, planning on Codex, coding on Claude, or any mix you choose.
@@ -15,6 +15,7 @@ Gemini, planning on Codex, coding on Claude, or any mix you choose.
 - [Supported Stacks and Services](#supported-stacks-and-services)
 - [Repository Layout](#repository-layout)
 - [Development](#development)
+- [License](#license)
 
 ## Key Features
 
@@ -33,8 +34,8 @@ Gemini, planning on Codex, coding on Claude, or any mix you choose.
 - **Context-efficient.** A guard hands a session off at 65% of its context window and stops it at 72%, on every agent:
   through a hook in Claude Code and through the session's event stream elsewhere. Sessions hand over through files,
   never memory, so every session starts sharp.
-- **Any stack.** Nothing in MetaLoop is tied to a language, framework or database. A project describes itself in one
-  file, `.metaloop/project.json`: how it builds and tests, which services its checks need and how its app is served.
+- **Any stack.** Nothing in LaneLoop is tied to a language, framework or database. A project describes itself in one
+  file, `.laneloop/project.json`: how it builds and tests, which services its checks need and how its app is served.
 
 ## Crews
 
@@ -57,7 +58,7 @@ skill doesn't already know.
 |---|---|
 | `crew.py presets` | Lists every crew role by role, with the reasons, and marks which are ready on this machine. |
 | `crew.py use auto` | Selects the first recommended crew this machine can run. |
-| `crew.py use <crew>` | Selects a crew and writes `.metaloop/crew.json`, which you commit. |
+| `crew.py use <crew>` | Selects a crew and writes `.laneloop/crew.json`, which you commit. |
 | `crew.py set <role>=<pin>` | Changes one or more roles, for example `plan=codex/gpt-6-astra:xhigh`. |
 | `crew.py check` | Confirms that each agent is installed and each pin answers. |
 
@@ -110,8 +111,8 @@ effort level.
 ## Models and Benchmarks
 
 The models and benchmark results below are built into the skill
-([agents.json](skills/metaloop/kit/common/agents.json), as of 16 November 2026).
-[reference/crew.md](skills/metaloop/reference/crew.md) gives the full evidence and its sources.
+([agents.json](skills/laneloop/kit/common/agents.json), as of 16 November 2026).
+[reference/crew.md](skills/laneloop/reference/crew.md) gives the full evidence and its sources.
 
 ### Models
 
@@ -181,17 +182,17 @@ Effort is in brackets where the leaderboard states it; a dash means the model ha
 
 Planning uses Google's [Elephant-Goldfish Model](https://github.com/google/elephant-goldfish-model) (EGM). The main
 session is EGM's **Elephant**: it designs the work with the owner. EGM's **Goldfish**, fresh subagents with none of the
-conversation, review the design. MetaLoop then splits the approved design into branches, has the Goldfish review that
+conversation, review the design. LaneLoop then splits the approved design into branches, has the Goldfish review that
 split, and orchestrates the chains that build it.
 
 | Stage | Steps |
 |---|---|
 | Design (EGM) | `/egm:egm-brainstorm` → `/egm:egm-draft` → `/egm:egm-review` and `/egm:egm-resolve` → the owner approves and the design is merged |
 | Hand-off | `egm_plan.py import` → branches drawn up, each sized for one PR under the cap → `egm_plan.py check` → fan-out Goldfish review → the owner signs off |
-| Build (MetaLoop) | `make_briefs.py` → parallel chains (red, green, docs, gate, security, PR, CI) → review items → the owner merges |
+| Build (LaneLoop) | `make_briefs.py` → parallel chains (red, green, docs, gate, security, PR, CI) → review items → the owner merges |
 | After merge | `/egm:egm-drift-report` → the owner updates the design doc or the code → re-verify |
 
-The full procedure is in [reference/egm.md](skills/metaloop/reference/egm.md). `PLANNER=grill` plans the original way,
+The full procedure is in [reference/egm.md](skills/laneloop/reference/egm.md). `PLANNER=grill` plans the original way,
 with grilling rounds on the plan page, and uses the `grilling` and `domain-modeling` companion skills where the
 repository or the user has them.
 
@@ -199,14 +200,14 @@ repository or the user has them.
 
 ### Claude Code
 
-MetaLoop installs as a Claude Code plugin, once per machine, and works in any repository:
+LaneLoop installs as a Claude Code plugin, once per machine, and works in any repository:
 
 ```bash
-claude plugin install metaloop --marketplace jomitiron/MetaLoop
+claude plugin install laneloop --marketplace jomitiron/LaneLoop
 ```
 
-This adds the repository as the `metaloop` marketplace and installs `metaloop@metaloop`. In a new session, Claude picks
-the skill up when the work fits, or you can run `/metaloop:metaloop`.
+This adds the repository as the `laneloop` marketplace and installs `laneloop@laneloop`. In a new session, Claude picks
+the skill up when the work fits, or you can run `/laneloop:laneloop`.
 
 To plan with EGM, install Google's plugin as well:
 
@@ -236,33 +237,50 @@ Add `--copy` to copy the skill instead of linking it, for example to commit it t
 The agents in a run's crew only need to be installed and signed in; `crew.py check` and the run's `doctor.py` report
 any that are missing. When the orchestrator is an agent other than Claude Code, the session page is a file the owner opens
 in a browser and answers in the chat, and planning uses the grilling rounds, since EGM is a Claude Code plugin. See
-[reference/crew.md](skills/metaloop/reference/crew.md).
+[reference/crew.md](skills/laneloop/reference/crew.md).
 
 ### Updates
 
-Turn on auto-update once: in Claude Code, open `/plugin` → **Marketplaces** → `metaloop` → **Enable auto-update**.
-Claude Code then checks in the background during a session and installs any newer MetaLoop, which loads at the next
+Turn on auto-update once: in Claude Code, open `/plugin` → **Marketplaces** → `laneloop` → **Enable auto-update**.
+Claude Code then checks in the background during a session and installs any newer LaneLoop, which loads at the next
 start or after `/reload-plugins`. Auto-update is off by default for marketplaces outside Anthropic's own. Without it,
 update by hand:
 
 ```bash
-claude plugin update metaloop@metaloop
+claude plugin update laneloop@laneloop
 ```
 
 A run already under way keeps the copy of the kit it was created with. Running `init_run.py` on it again brings in the
 new kit and keeps the run's settings and any runbook or settings file you edited; the new render is written beside them
 with a `.new` suffix.
 
+### Coming From MetaLoop
+
+LaneLoop was called MetaLoop. An existing install moves over by itself: the marketplace's `renames` entry tells Claude
+Code that `metaloop` is now `laneloop`, so it rewrites `metaloop@metaloop` to `laneloop@metaloop` in your settings at
+the next update and loads the new name. The marketplace keeps the local name you added it under (`metaloop`), which
+is fine; `claude plugin update laneloop@metaloop` updates it by hand. The old repository address redirects to this one.
+
+In the repositories you use it on, rename the folder, then commit it:
+
+```bash
+git mv .metaloop .laneloop
+```
+
+Until you do, the kit reads `.metaloop/` and says so. `METALOOP_BIN_*`, `METALOOP_ARGS_*` and `METALOOP_KEEP_AWAKE`
+still work as well; their new names start with `LANELOOP_`. The verify loop keeps its database between runs in
+`~/.laneloop/<project>/` now, so the first verify run after the rename seeds a fresh copy (`~/.metaloop/` can then go).
+
 ### Team Repositories
 
-To give everyone who works in a repository MetaLoop and EGM, with MetaLoop updating itself, commit the following to
+To give everyone who works in a repository LaneLoop and EGM, with LaneLoop updating itself, commit the following to
 the repository's `.claude/settings.json`:
 
 ```json
 {
   "extraKnownMarketplaces": {
-    "metaloop": {
-      "source": { "source": "github", "repo": "jomitiron/MetaLoop" },
+    "laneloop": {
+      "source": { "source": "github", "repo": "jomitiron/LaneLoop" },
       "autoUpdate": true
     },
     "egm": {
@@ -270,7 +288,7 @@ the repository's `.claude/settings.json`:
     }
   },
   "enabledPlugins": {
-    "metaloop@metaloop": true,
+    "laneloop@laneloop": true,
     "egm@egm": true
   }
 }
@@ -280,14 +298,14 @@ Claude Code registers both marketplaces for each person once they trust the fold
 install it, so each person runs these commands once in the repository:
 
 ```bash
-claude plugin install metaloop@metaloop --scope project
+claude plugin install laneloop@laneloop --scope project
 claude plugin install egm@egm --scope project
 ```
 
 ### Project Setup
 
-Describe the project once from the presets and commit the file this writes, `.metaloop/project.json`. Ask Claude to
-set MetaLoop up for the repository and it runs this from the installed kit (`--list` shows every preset):
+Describe the project once from the presets and commit the file this writes, `.laneloop/project.json`. Ask Claude to
+set LaneLoop up for the repository and it runs this from the installed kit (`--list` shows every preset):
 
 ```bash
 python3 <kit>/init_project.py --stack node --db postgres
@@ -332,7 +350,7 @@ its own services, and data kept between runs and seeded once), the tools the mac
 may run. Whatever a preset cannot know, such as how this particular app starts, it marks `FILL IN`, and the run will
 not start until each one is filled in. Anything the presets do not cover takes a few lines of JSON: any command, any
 test runner (given a summary pattern) and any service with a start command and a ready check.
-[reference/project.md](skills/metaloop/reference/project.md) documents every field.
+[reference/project.md](skills/laneloop/reference/project.md) documents every field.
 
 ## Repository Layout
 
@@ -342,21 +360,22 @@ agent can load through `install.sh`.
 | Path | Contents |
 |---|---|
 | [.claude-plugin/](.claude-plugin/) | `plugin.json` (the plugin) and `marketplace.json` (the catalog Claude Code installs it from). |
-| [skills/metaloop/SKILL.md](skills/metaloop/SKILL.md) | The skill: when to offer a loop, the roles, the non-negotiables and the lifecycle. |
-| [skills/metaloop/reference/](skills/metaloop/reference/) | The orchestrator's procedures, the project profile, the fix and verify loops, the EGM hand-off, and pitfalls met in practice. |
-| [skills/metaloop/kit/](skills/metaloop/kit/) | The scripts `init_run.py` copies into a run folder (see the [kit README](skills/metaloop/kit/README.md)). |
-| [skills/metaloop/kit/presets/](skills/metaloop/kit/presets/) | Ready-made project profiles: stacks, and the databases and services their checks need. |
-| [skills/metaloop/kit/crews/](skills/metaloop/kit/crews/) | Ready-made crews: which agent and model researches, plans, codes and verifies. |
-| [skills/metaloop/kit/common/agents.json](skills/metaloop/kit/common/agents.json) | The agents the kit drives and the models it knows, with dated benchmark notes. |
+| [skills/laneloop/SKILL.md](skills/laneloop/SKILL.md) | The skill: when to offer a loop, the roles, the non-negotiables and the lifecycle. |
+| [skills/laneloop/reference/](skills/laneloop/reference/) | The orchestrator's procedures, the project profile, the fix and verify loops, the EGM hand-off, and pitfalls met in practice. |
+| [skills/laneloop/kit/](skills/laneloop/kit/) | The scripts `init_run.py` copies into a run folder (see the [kit README](skills/laneloop/kit/README.md)). |
+| [skills/laneloop/kit/presets/](skills/laneloop/kit/presets/) | Ready-made project profiles: stacks, and the databases and services their checks need. |
+| [skills/laneloop/kit/crews/](skills/laneloop/kit/crews/) | Ready-made crews: which agent and model researches, plans, codes and verifies. |
+| [skills/laneloop/kit/common/agents.json](skills/laneloop/kit/common/agents.json) | The agents the kit drives and the models it knows, with dated benchmark notes. |
 | [install.sh](install.sh) | Installs the skill for Codex, Antigravity, Gemini CLI, Grok Build, OpenCode or Cursor. |
 | [evals/](evals/) | Behaviour evals for the skill (`claude plugin eval .`). |
 | [.github/workflows/check.yml](.github/workflows/check.yml) | Validates the plugin and runs the kit's self-test on every pull request. |
+| [LICENSE](LICENSE), [NOTICE](NOTICE) | The Apache License 2.0, and the copyright and attribution notices that go with it. |
 
 ## Development
 
 ### Releasing Changes
 
-Every commit on `main` is a release. `plugin.json` has no `version`, so Claude Code versions MetaLoop by commit: people
+Every commit on `main` is a release. `plugin.json` has no `version`, so Claude Code versions LaneLoop by commit: people
 with auto-update on receive a merged change at their next session, and everyone else on `claude plugin update`.
 
 - **Merge only what is ready.** [check.yml](.github/workflows/check.yml) validates the plugin and runs the kit's
@@ -382,10 +401,20 @@ claude plugin eval . --judge-model sonnet
 From a clone of this repository:
 
 ```bash
-bash skills/metaloop/kit/selftest.sh
+bash skills/laneloop/kit/selftest.sh
 ```
 
 The self-test renders a fix run and a verify run in a temporary folder from a test profile and runs the scripts against
 stand-ins (a stub toolchain and a stub service), every test-output parser against sample output, and every stack
 preset. Where PostgreSQL or MongoDB is installed, it also starts the native presets for real. Nothing outside the
 temporary folder is touched.
+
+## License
+
+LaneLoop is licensed under the [Apache License, Version 2.0](LICENSE). You may use, change and redistribute it,
+commercially or not, provided you keep the license and the [NOTICE](NOTICE) file with it and mark the files you change.
+The license grants no rights to the LaneLoop name.
+
+The fan-out readiness reviewer and its standard (`skills/laneloop/kit/fix/fanout_readiness.md` and
+`fanout-readiness-standard.md`) are adapted from Google's [Elephant-Goldfish Model](https://github.com/google/elephant-goldfish-model),
+also licensed under Apache 2.0; [NOTICE](NOTICE) lists what was taken.
