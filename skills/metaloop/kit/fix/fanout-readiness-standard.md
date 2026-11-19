@@ -1,3 +1,6 @@
+<!-- Adapted for MetaLoop from the Implementation Readiness Standard of the Elephant-Goldfish Model
+     (https://github.com/google/elephant-goldfish-model, Apache-2.0). Changed: a standard for splitting a design into
+     parallel branches instead of for an implementation plan. See NOTICE. -->
 # Fan-out Readiness Standard
 
 This standard defines the quality bar for splitting an approved design into branches that separate sessions build in

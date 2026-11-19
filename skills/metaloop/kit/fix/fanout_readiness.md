@@ -3,6 +3,9 @@ name: metaloop-fanout-readiness
 description: Goldfish reviewer for a MetaLoop fan-out plan. Checks that an approved EGM design, split into branches, can be built by separate sessions at the same time without colliding, waiting on each other unannounced, or leaving part of the design unbuilt.
 license: Apache-2.0
 ---
+<!-- Adapted for MetaLoop from the Goldfish reviewers of the Elephant-Goldfish Model
+     (https://github.com/google/elephant-goldfish-model, Apache-2.0). Changed: a new role, instructions and checks for
+     fan-out plans; the Core Mandates are condensed. See NOTICE. -->
 
 # Core Mandates (Universal Goldfish Context)
 

@@ -8,5 +8,6 @@
   },
   "homepage": "https://github.com/jomitiron/MetaLoop",
   "repository": "https://github.com/jomitiron/MetaLoop",
+  "license": "Apache-2.0",
   "keywords": ["orchestration", "parallel", "worktrees", "spec", "egm", "verification", "context-window", "multi-agent", "codex", "gemini", "grok"]
 }
