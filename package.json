@@ -1,5 +1,5 @@
 {
-  "name": "metaloop",
+  "name": "laneloop",
   "version": "0.0.0-development",
   "description": "Claude Code plugin: run large engineering work as unattended coding-agent loops with owner gates, parallel fix chains in git worktrees and live end-to-end verification, on any mix of agents and models.",
   "keywords": [
@@ -13,11 +13,11 @@
     "egm",
     "verification"
   ],
-  "homepage": "https://github.com/jomitiron/MetaLoop#readme",
-  "bugs": "https://github.com/jomitiron/MetaLoop/issues",
+  "homepage": "https://github.com/jomitiron/LaneLoop#readme",
+  "bugs": "https://github.com/jomitiron/LaneLoop/issues",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jomitiron/MetaLoop.git"
+    "url": "git+https://github.com/jomitiron/LaneLoop.git"
   },
   "license": "Apache-2.0",
   "author": "jomitiron (https://github.com/jomitiron)",

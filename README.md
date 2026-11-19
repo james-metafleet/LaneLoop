@@ -303,19 +303,19 @@ claude plugin install egm@egm --scope project
 
 ### Pinned Versions From npm
 
-The GitHub install above follows every merge to `main`. To hold a team on numbered releases instead, list MetaLoop's
+The GitHub install above follows every merge to `main`. To hold a team on numbered releases instead, list LaneLoop's
 npm package in your own marketplace (an entry in your marketplace's `.claude-plugin/marketplace.json`) with the
 versions you accept:
 
 ```json
 {
-  "name": "metaloop",
-  "source": { "source": "npm", "package": "metaloop", "version": "^0.1.0" }
+  "name": "laneloop",
+  "source": { "source": "npm", "package": "laneloop", "version": "^0.1.0" }
 }
 ```
 
 Claude Code fetches the package from npm, runs none of its scripts, and updates only when a newer release within that
-range is published. Each release is also a [GitHub release](https://github.com/jomitiron/MetaLoop/releases) with its
+range is published. Each release is also a [GitHub release](https://github.com/jomitiron/LaneLoop/releases) with its
 notes.
 
 ### Project Setup
@@ -400,13 +400,13 @@ with auto-update on receive a merged change at their next session, and everyone 
 - **Try a change before it ships.** From a clone, `claude --plugin-dir .` loads the working copy for that session
   instead of the installed plugin.
 - **npm releases.** Publishing a GitHub release tagged `v<semver>` (e.g. `v0.1.0`) publishes that commit to npm as
-  `metaloop@<version>` ([publish-npm.yml](.github/workflows/publish-npm.yml)). The workflow stamps the version into
+  `laneloop@<version>` ([publish-npm.yml](.github/workflows/publish-npm.yml)). The workflow stamps the version into
   `package.json` and `plugin.json` in its own checkout only (`scripts/npm-release.mjs`), so `main` keeps versioning the
   GitHub install by commit; an npm copy with no version would read as `unknown` and never update. `npm publish` refuses
   a copy that wasn't stamped. It authenticates with npm trusted publishing, so no token is stored. Set this up once:
   publish the first release by hand (`npm login`, `node scripts/npm-release.mjs 0.1.0`, `npm publish`, then
   `git checkout -- package.json .claude-plugin/plugin.json`), then on npmjs.com, in the package's settings, add the
-  trusted publisher: GitHub Actions, `jomitiron/MetaLoop`, workflow `publish-npm.yml`.
+  trusted publisher: GitHub Actions, `jomitiron/LaneLoop`, workflow `publish-npm.yml`.
 - **Numbered releases for everyone.** To hold GitHub installs on numbered releases too, add `"version": "1.0.0"` to
   `.claude-plugin/plugin.json` on `main` and raise it for each release (`claude plugin tag --push` tags it). Users then
   receive nothing new until the version changes.
