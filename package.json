@@ -1,0 +1,37 @@
+{
+  "name": "laneloop",
+  "version": "0.0.0-development",
+  "description": "Claude Code plugin: run large engineering work as unattended coding-agent loops with owner gates, parallel fix chains in git worktrees and live end-to-end verification, on any mix of agents and models.",
+  "keywords": [
+    "claude-code",
+    "claude-code-plugin",
+    "agent-skills",
+    "orchestration",
+    "parallel",
+    "worktrees",
+    "multi-agent",
+    "egm",
+    "verification"
+  ],
+  "homepage": "https://github.com/jomitiron/LaneLoop#readme",
+  "bugs": "https://github.com/jomitiron/LaneLoop/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jomitiron/LaneLoop.git"
+  },
+  "license": "Apache-2.0",
+  "author": "jomitiron (https://github.com/jomitiron)",
+  "files": [
+    ".claude-plugin/plugin.json",
+    "skills/",
+    "install.sh",
+    "NOTICE"
+  ],
+  "scripts": {
+    "prepublishOnly": "node scripts/npm-release.mjs --check"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}

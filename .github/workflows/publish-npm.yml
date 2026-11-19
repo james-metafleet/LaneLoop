@@ -1,0 +1,33 @@
+# Publishes the plugin to npm when a GitHub release is published (tag v1.2.3). The version comes from the tag and is
+# stamped into this checkout only (scripts/npm-release.mjs), so main keeps versioning the GitHub install by commit.
+# Authentication is npm trusted publishing (OIDC): no token is stored. Set it up once on npmjs.com, on the package's
+# settings page: trusted publisher = GitHub Actions, jomitiron/LaneLoop, workflow publish-npm.yml.
+name: publish-npm
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # the OIDC token npm trusted publishing and provenance need
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: npm with trusted publishing
+        run: npm install -g npm@11
+      - name: Install Claude Code
+        run: npm install -g @anthropic-ai/claude-code
+      - name: Stamp the release version
+        run: node scripts/npm-release.mjs "$GITHUB_REF_NAME"
+      - name: Validate the plugin as it will be published
+        run: claude plugin validate .claude-plugin/plugin.json
+      - name: Publish
+        run: npm publish
