@@ -77,7 +77,7 @@ pins), hand-off at 65%, stop at 72%, $150 per session (Claude Code), 300 minutes
 `SESSION_TIMEOUT_MIN`), Codex in its workspace sandbox (`CODEX_SANDBOX`), 10 sessions per chain, 5 chains at once
 (on macOS and Linux, one per 8 GB of memory, at most 5), base: the repository's default branch, branches
 `ai-work/<SLUG_PREFIX><slug>`,
-worktrees in `<run>-wt/`, live pages synced at least every 10 minutes (`LIVE_SYNC_MIN`).
+worktrees in `<run>-wt/`, the session page synced at least every 10 minutes (`LIVE_SYNC_MIN`).
 
 Machine fallbacks (doctor.py says when each applies):
 
@@ -85,6 +85,7 @@ Machine fallbacks (doctor.py says when each applies):
 |---|---|---|
 | `PYTHON` | `python` (Windows), `python3` | The interpreter every script, hook, allow-list entry and runbook names. |
 | `PROJECT` | `.laneloop/project.json` | The project profile (relative to the repo, or absolute). |
+| `PR_LABEL` | `laneloop:<run name>` | The label on every pull request the run opens (at most 50 characters); the session page links all of them. Empty: no label. |
 | `GATE_SKIP` | empty | **The owner's decision only:** gate steps (by name) left out on this machine, e.g. one whose service this machine can't run; CI runs it instead. The gate's verdict and every PR body name it. |
 | `START_SERVER` | `1` | `0`: the verify loop tests an app already running on `APP_URL` (the profile's `verify.url`). |
 | `KNOWN_FLAKES` | empty | Tests that fail only under shared load: reported, not counted; each must pass when run alone. |
@@ -105,9 +106,9 @@ Machine fallbacks (doctor.py says when each applies):
 | `launch.sh <name> <start.sh> [args]` | Starts a loop without taking focus and keeps the computer awake under it: minimised mintty (Windows), detached tmux or screen (macOS under caffeinate, Linux under systemd-inhibit). |
 | `platform.sh` | Sourced by every shell script: the Windows calls (cygpath, toasts, netstat, taskkill, PowerShell) and their macOS / Linux equivalents, and `keep_awake`, `nap` and `slept_since`, which keep the computer awake and notice when it slept. |
 | `ctx_guard.py`, `session_result.py`, `notify.ps1`, `keep_awake.ps1` | Claude Code's context and model guard (a hook); a Claude Code session log's result line; the Windows toast; the Windows keep-awake hold. |
-| `live_page.py`, `live_page.html` | A chain's (or the verify run's) live page, written to `live/<slug>.live.html` in the run folder, never committed (the repo ignores `*.live.html`); `--url` records where it was published. It draws itself from its own database. |
-| `live_sync.py` | The writes that keep each live page current (state, lines, questions, review items), for the main session's ArtifactData batch; `--done` once written; `--attention` prints the main window's one line per thing a page needs, with its link. |
-| `two_way.js` | Shared by the live pages and the plan page: Ask Claude (Send to Claude), and Claude's answers from the page's `replies`. |
+| `live_page.py`, `live_page.html` | The orchestrator session's one live page: a dashboard (the run's PR label linked to its pull requests, what is running, what needs the owner, PRs open and merged, cost) over a tab per task. `live_page.py <tab>...` adds this run's tabs (chain slugs, or `verify`) and writes `live/session.live.html` in the run folder, never committed (the repo ignores `*.live.html`); `--url` records where the session's page is published (a later run of the same session records the same url, and never publishes its own); `--plan-url` links the plan page. It draws itself from its own database. |
+| `live_sync.py` | The writes that keep this run's tabs current (state, lines, questions, review items) and its dashboard entry, for the main session's ArtifactData batch; `--done` once written; `--attention` prints the main window's one line per thing a tab needs, with the page's link. |
+| `two_way.js` | Shared by the session page and the plan page: Ask Claude (Send to Claude), and Claude's answers from the page's `replies`. |
 | `project.py` | Reads the project profile: `check`, `get <key>`, `exports <section>`; the test-output parsers the gate uses. |
 | `services.py up\|env\|down` | The project's background services (databases, caches, queues, listeners): a fresh one per gate slot, or the verify loop's own (kept, seeded once, reused). |
 
@@ -136,15 +137,15 @@ Machine fallbacks (doctor.py says when each applies):
 | `sign_plan.py` | Records the owner's sign-off in `plan.json`; refuses while a decision is open, a branch has no tasks, or a build branch is unsized (`est_lines`) or over its PR size cap. |
 | `make_briefs.py` | `briefs/<slug>.md` (with the branch's title, tasks, a `Plan signed off:` line and its `Size cap:`) and a queue file, from a signed-off plan only. The runner starts no branch whose brief lacks that line. |
 | `pr_size.py` | A pull request's size: `count` measures a branch (added plus removed lines, tests included; lockfiles, generated files and signed-off pages left out) against its cap, `plan` lists every branch's estimate against `PR_MAX_LINES`. `sign_plan.py`, `egm_plan.py check` and `task.py` use it. |
-| `start.sh <queue> [MAX_PAR]`, `runner.sh`, `fixloop.sh` | Run a queue of chains in parallel; one chain of sessions per branch. |
-| `task.py`, `gate.py` | A branch's state (`task.py pin`: the plan or code pin its next session runs on; `ask` / `answer`: a question for the owner that doesn't stop the chain, and the answer from its live page; `done`: a task ticked; `size`: the branch against its PR size cap, which the pr phase and `ready` enforce; `cap`: a cap the owner raised mid-run); the pre-PR gate (the profile's gate steps, detached, slot-limited, each slot with its own services). |
+| `start.sh <queue> [MAX_PAR]`, `runner.sh`, `fixloop.sh` | Run a queue of chains in parallel; one chain of sessions per branch. The runner makes the run's PR label (`PR_LABEL`) before the first chain starts, and stops if it can't. |
+| `task.py`, `gate.py` | A branch's state (`task.py pin`: the plan or code pin its next session runs on; `ask` / `answer`: a question for the owner that doesn't stop the chain, and the answer from its tab of the session page; `done`: a task ticked; `size`: the branch against its PR size cap, which the pr phase and `ready` enforce; `cap`: a cap the owner raised mid-run); the pre-PR gate (the profile's gate steps, detached, slot-limited, each slot with its own services). |
 | `pr_read.py <PR> comments\|reviews\|issue` | The chains' only way to read PR comments: GET only (chains may not call `gh api`). |
 | `runbook.md`, `settings.json`, `end_gate.py` | What every chain session is told and allowed; its stop hook. |
 | `status.py [queue]` | Every branch's state, phase, PR and last note. |
 | `wait_chain.sh`, `wait_gate.sh <slug>`, `wait_ci.sh <PR>...` | Watchers; each keeps the computer awake while it waits, times out after `WAIT_HOURS` of awake time and prints the state it saw. `wait_chain.sh` also returns on a chain's question, every `LIVE_SYNC_MIN` minutes when a chain's state changed, and on waking from a sleep. |
 | `fix_page.py`, `md_to_page.py`, `post_publish.sh` | Make a design page publishable; render a schema page; link the published artifact in its README row. |
 | `record_signoff.py` | Record a sign-off on design branches and queue their builds (`--dry-run` first). |
-| `approve.py` | Record the owner's review-item approvals (from each chain's live page) and queue the chains that apply them. |
+| `approve.py` | Record the owner's review-item approvals (from each chain's tab) and queue the chains that apply them. |
 | `threads.py`, `answer.py` | List, reply to and resolve PR threads; answer summaries (the signature line added). |
 | `merge_base.sh <slug>` | Bring a branch up to date with the base after merges; `--commit` after resolving starts the gate. |
 | `retire.sh [--all-runs] [--apply]` | Remove worktrees and branches of merged PRs, keeping their state. After every merge batch; `--all-runs` covers earlier runs' late merges. |

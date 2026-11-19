@@ -31,7 +31,7 @@ Chains never run EGM: they can't spawn subagents, and their brief carries what t
         |
         v   6. Fan out and monitor (LaneLoop)
   make_briefs.py  ->  every brief carries the design, its file boundary and its journeys
-  launch.sh start.sh queue  ->  chains in parallel worktrees, one live page each
+  launch.sh start.sh queue  ->  chains in parallel worktrees, a tab each on the session's live page
   wait_chain.sh, live_sync.py, egm_plan.py boundary  ->  review items  ->  the owner merges
         |
         v   7. After merges

@@ -31,7 +31,7 @@ You are one session in a chain that delivers ONE task on ONE branch. {{OWNER}} a
   stops the chain.
 - Start every session with `task.py show`. An `OWNER ANSWER` note comes first: if it isn't what you carried on with, redo
   that part (test first) before anything else.
-- {{OWNER}} follows this branch on its live page, which shows your phase lines, notes and questions as you write them.
+- {{OWNER}} follows this branch on its tab of the session's live page, which shows your phase lines, notes and questions as you write them.
   Write them in plain words: what changed for the person using the app or for the system, and where in the process. Keep
   file:line and method names for commits and HANDOFF.md. A question's title is short, with Every Word Capitalized; its
   text says what happened, with real ids, and where it bites.
@@ -73,7 +73,8 @@ Run task.py and gate.py with these exact paths (they are allow-listed): `{{PYTHO
    `task.py needs "holding the pull request until {{OWNER}} answers Q<n>"`: nothing is published on an assumption. If
    it is refused for size, finish with the size rule's `needs`.
    `git fetch origin` and `git merge origin/{{BASE}}` (resolve conflicts, then re-run the gate if anything merged);
-   `git push -u origin <branch>`; `gh pr create --base {{BASE}} --title "<conventional title, no tool names>" --body-file .fixloop/pr-body.md`.
+   `git push -u origin <branch>`; `gh pr create --base {{BASE}}{{PR_LABEL_ARG}} --title "<conventional title, no tool names>" --body-file .fixloop/pr-body.md`
+   (the label marks every pull request of this run; the runner made it before any chain started).
    The body stands on its own: what was wrong (defect ids, the tests that showed it), what changed,
    tests added, docs touched, what to re-verify after merge, and links to the plan and results pages as extra context
    only. If the gate left a step out (GATE_SKIP), the body says so in a "Not checked locally" line naming the step and

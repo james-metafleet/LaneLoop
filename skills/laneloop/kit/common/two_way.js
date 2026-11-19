@@ -1,4 +1,4 @@
-/* Shared by the laneloop pages (each chain's live page, the plan page): connecting to the page's database, comments and
+/* Shared by the laneloop pages (the session's live page, the plan page): connecting to the page's database, comments and
    viewer; asking Claude from the page (Send to Claude, so the thread wakes the main session); showing Claude's answers,
    which the main session writes to the db "replies" collection (owner-only), keyed by the item's id or q-*. */
 var TwoWay = (function () {
@@ -97,13 +97,14 @@ var TwoWay = (function () {
       });
     return mount.childNodes.length;
   }
-  function watch(db, path, cb) {
-    db.collection(path).onSnapshot(function (snap) {
+  function watchQuery(q, cb) {   // returns the unsubscribe: a query whose filter changes is watched afresh
+    return q.onSnapshot(function (snap) {
       var out = {};
       (snap.docs || []).forEach(function (doc) { out[doc.id] = doc.data() || {}; });
       cb(out);
     }, function () {});
   }
+  function watch(db, path, cb) { return watchQuery(db.collection(path), cb); }
   /* h.db(db), h.comments(c), h.status(text): called as each capability arrives (or can't). */
   function connect(h) {
     if (!(window.claude && typeof window.claude.use === 'function')) { h.status('Open the published page to see it live.'); return; }
@@ -120,5 +121,5 @@ var TwoWay = (function () {
     window.claude.use('comments').then(function (c) { if (c) { comments = c; if (h.comments) h.comments(c); } }, function () {});
   }
   return {el: el, fmt: fmt, hhmm: hhmm, ago: ago, paras: paras, send: send, notify: notify, attachAsk: attachAsk,
-          reply: reply, questions: questions, watch: watch, connect: connect, me: function () { return myId; }};
+          reply: reply, questions: questions, watch: watch, watchQuery: watchQuery, connect: connect, me: function () { return myId; }};
 })();

@@ -100,7 +100,7 @@ spent on a page dump is a test not run.
   checked with `ledger.py note`, then `{{PYTHON}} ledger.py needs {ID} "the exact ask"` (recorded as blocked; the ask goes
   on the run's live page for {{OWNER}} to answer) and go straight on to the next test. Never pause for these, never
   guess, never work around them.
-- {{OWNER}} follows the run on its live page, which shows each test's result line and every ask as you write them. Write
+- {{OWNER}} follows the run on the verify tab of the session's live page, which shows each test's result line and every ask as you write them. Write
   them in plain words: what the person using the app saw, and where. Keep selectors and file names for notes.
 
 ## Context guard and hand-off

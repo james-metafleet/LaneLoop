@@ -40,9 +40,10 @@ questions in one batch, each with its recommended answer first:
 >    collisions, and it goes on a page for your sign-off. Nothing starts before you sign it off.
 > 3. **Fix**: parallel chains, each fix on its own branch in its own worktree: failing test first, fix, docs, the full
 >    gate, security review, PR, CI. UI and stored-data changes stop at a page for your sign-off before they're built.
->    Each chain has its own live page: where it is, what it has done, and what it is asking you. Here I only post the
->    link when a page needs you.
-> 4. **Review and merge**: each PR's review comments go on its chain's page with my recommendation; you approve there,
+>    One live page follows the whole session: a tab per chain (and one for the verify loop) with where it is, what it
+>    has done and what it is asking you, under a dashboard of every PR (they all carry one label). Here I only post the
+>    link when a tab needs you.
+> 4. **Review and merge**: each PR's review comments go on its chain's tab with my recommendation; you approve there,
 >    the chain applies, I answer the threads. You merge; I reconcile conflicts and re-verify.
 >
 > You'd decide at five points: the plan (the design's approval and the split's sign-off), design sign-offs, schema sign-offs, review items, merges.
@@ -64,7 +65,7 @@ Write the answers into the runbook as the run's hard rules (step 0). If the owne
 | Who | Does | Never does |
 |---|---|---|
 | **Owner** (the engineer who opted in) | Sets the hard rules, answers the plan's rounds and signs it off, makes every decision, signs off designs and schemas, answers chains and approves review items on their live pages, merges | Babysits sessions |
-| **Orchestrator** (this session, on any agent that loads skills; EGM's Elephant) | Designs with the owner through EGM, splits the approved design into branches, writes briefs, starts and watches loops, publishes and syncs every live page, relays the owner's answers to the chains, answers PR threads, merges the base into branches, files tickets | Writes the fixes itself; merges; decides for the owner; carries a chain's conversation in the chat |
+| **Orchestrator** (this session, on any agent that loads skills; EGM's Elephant) | Designs with the owner through EGM, splits the approved design into branches, writes briefs, starts and watches loops, publishes and syncs the session's live page, relays the owner's answers to the chains, answers PR threads, merges the base into branches, files tickets | Writes the fixes itself; merges; decides for the owner; carries a chain's conversation in the chat |
 | **Research sessions** (`consult.py`, the crew's research pin; plan reviews on the plan pin) | Answer one question each, read-only, into `consults/<name>.md`, many at once | Edit anything; decide |
 | **EGM** (Google's plugin, run by the orchestrator) | Brainstorms and drafts the design doc; its Goldfish (fresh subagents with no memory of the conversation) review the design, then the fan-out; drift-reports the design against merged code | Writes code; runs inside a chain |
 | **Verify loop** (headless sessions) | Runs the test plan against the live e2e stack, records results in a ledger | Edits code, files anything, pauses for anything but a sign-in |
@@ -105,13 +106,15 @@ Write the answers into the runbook as the run's hard rules (step 0). If the owne
     settled term into `docs/glossary.md`); then every branch broken into tasks, each with the test that proves it.
     `make_briefs.py` writes no brief until `sign_plan.py` records the owner's sign-off, and the runner starts no branch
     without it.
-11. **Every parallel task has its own live page; the chat only links to it.** Each chain, and the verify loop, gets a page
-    (`live_page.py`) where the owner sees its progress, answers its questions, decides its review comments and asks it
-    things. A new message in the chat pushes an ask out of sight; the page keeps it on top until it is answered. So the
-    main window never relays that conversation: for each thing a page needs, it posts one line with the link
-    (`live_sync.py --attention`), and again in every status update until it is answered. Live pages are built in the run
-    folder as `*.live.html`, which the repo ignores: they are never committed (signed-off mockups and schema pages still
-    are).
+11. **One live page per orchestrator session, a tab per parallel task; the chat only links to it.** Each chain, and the
+    verify loop, gets a tab on the session's page (`live_page.py`) where the owner sees its progress, answers its
+    questions, decides its review comments and asks it things; above the tabs, a dashboard shows the PR label every
+    pull request of the run carries (loop.conf `PR_LABEL`, linked to the list of them), what is running, what needs the
+    owner, PRs open and merged, and the cost. A new message in the chat pushes an ask out of sight; the tab keeps it on
+    top until it is answered. So the main window never relays that conversation: for each thing a tab needs, it posts
+    one line with the link (`live_sync.py --attention`), and again in every status update until it is answered. The
+    page is built in the run folder as `*.live.html`, which the repo ignores: it is never committed (signed-off mockups
+    and schema pages still are).
 12. **Every PR is small.** No pull request changes more than `PR_MAX_LINES` lines (400 unless the owner chose otherwise),
     added plus removed, tests included, as GitHub counts them; lockfiles, generated files and signed-off mockup and
     schema pages don't count. The plan gives every build branch an estimate (`est_lines`) under its cap, and
@@ -152,7 +155,8 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
 ### 1. Verify ([reference/verify-loop.md](reference/verify-loop.md))
 - Test plan → `tests/<ID>.md`, `python init_ledger.py "<title>"`; a verify worktree on the base; the e2e stack and one
   shared Chrome with a persistent profile (the owner signs in there once).
-- Its live page first: `live_page.py verify`, publish, `live_page.py --url verify <url>`, `live_sync.py verify` and write.
+- The session page first: `live_page.py --title "<Session Title>" verify`, publish it (or, if this session's page is
+  already up, skip the publish), `live_page.py --url <url>`, `live_sync.py verify` and write.
 - Start: `<run>/launch.sh "verify-<name>" <run>/start.sh` (Windows: a minimised mintty window; macOS: a detached tmux
   session under caffeinate). Arm `wait_verify.sh` at once and re-arm it after every event; sync the page each time and
   post the `--attention` lines. On PAUSED: raise the run's
@@ -192,13 +196,15 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
 
 ### 3. Build the ungated wave ([reference/fix-loop.md](reference/fix-loop.md))
 - `python make_briefs.py plan.json --wave 1`.
-- Live pages first ([reference/orchestrator.md](reference/orchestrator.md), "Live Pages"): `live_page.py <every slug in
-  the queue>`, publish each with the capabilities it prints, `live_page.py --url <slug> <url>`, then `live_sync.py --all`
-  and write each page's writes (`ArtifactData` batch), `live_sync.py --all --done`.
+- Tabs first ([reference/orchestrator.md](reference/orchestrator.md), "Live Pages"): `live_page.py <every slug in the
+  queue>`; if this session has no page yet, publish `live/session.live.html` once with the capabilities it prints;
+  `live_page.py --url <the session page's url>`, then `live_sync.py --all`, write its writes (`ArtifactData` batch),
+  `live_sync.py --all --done`. The runner makes the run's PR label (`PR_LABEL`) before the first chain starts, and every
+  chain opens its pull request with it.
 - `<run>/launch.sh "fix-<name> wave1" <run>/start.sh queue-wave1.txt 5`. Arm `wait_chain.sh`: it returns when a chain
   ends or asks, and every `LIVE_SYNC_MIN` minutes with progress. Loops and watchers keep the computer awake; a closed
-  lid still sleeps a laptop, so tell the owner to keep it open and plugged in. Each time: sync the pages, then post
-  exactly the lines `live_sync.py --attention` prints. Relay each answer from a page with `task.py answer` (requeue a
+  lid still sleeps a laptop, so tell the owner to keep it open and plugged in. Each time: sync the page, then post
+  exactly the lines `live_sync.py --attention` prints. Relay each answer from a tab with `task.py answer` (requeue a
   stopped chain). A chain that stops over its size cap proposes a split: the owner decides it, and the plan changes
   ([reference/orchestrator.md](reference/orchestrator.md), "A Chain Over Its Size Cap").
 - Each chain ends `awaiting_owner` with a PR, green CI and its review comments as proposals.
@@ -211,10 +217,10 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
 - On an explicit sign-off: `record_signoff.py` (README rows, a SIGNED OFF note, requeue), then run the build queue.
   The chain builds exactly the signed-off page.
 
-### 5. Review Comments, On Each Chain's Page
+### 5. Review Comments, On Each Chain's Tab
 - As a chain ends `awaiting_owner`: write your recommendation per item, in plain words, to `live/<slug>.recs.json`
-  (Apply / Reply only / Owner's call), sync, and post its "Ready" line. The owner approves on the chain's page.
-- Read the approvals (`ArtifactData` list `approvals`), `approve.py` writes APPROVED notes and a queue; run it. PRs whose
+  (Apply / Reply only / Owner's call), sync, and post its "Ready" line. The owner approves on the chain's tab.
+- Read the approvals (`ArtifactData` list `approvals`: ids `<slug>~r<n>`), `approve.py` writes APPROVED notes and a queue; run it. PRs whose
   items are all reply-only get answered at once.
 - As each chain ends: `answer.py <PR> <slug> --map`, write the replies, `answer.py ... replies/<PR>.json`, answer the
   review summary with `threads.py comment`, then tell the owner the PR is ready.
@@ -237,7 +243,7 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
 ## Keeping the owner informed
 
 - Lead with what needs them: a pause, a decision, a sign-off, a PR to merge. Then what's ready. Then what's running.
-- A chain's questions, review items and progress live on its page. The chat carries only the lines `live_sync.py
+- A chain's questions, review items and progress live on its tab of the session page. The chat carries only the lines `live_sync.py
   --attention` prints ("Needs you · <slug>: <one line> → <link>", "Ready · <slug>: ... → <link>") and the plan's
   "Round N is ready → <link>", each repeated in every status update until it is answered. Never paste a chain's question
   into the chat.
@@ -258,7 +264,8 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
   ctx_guard.py, end_gate.py     the hooks; logs/ctx.log has every reading
   verify: ledger.json, tests/, guide/, evidence/, HANDOFF.md, PAUSED.md, REPORT.md
   fix:    plan.json (with an EGM run's design, journeys and files), fanout.md, briefs/, queue-*.txt, logs/runner.log, replies/, design-pages.md, locks/ (gate slots)
-  live/                         <slug>.live.html (never committed), urls.json, and per page .sync / .pending / .recs json
+  live/                         session.live.html (never committed), tabs.json, urls.json (the session and plan pages),
+                                sync.json, pending.json, and per chain <slug>.recs.json
   consults/                     <name>.md: each research or plan question's answer; <name>/ its prompt, log and meta
 <WT_ROOT>/<slug>/.fixloop/      per branch: brief.md, status.json, HANDOFF.md, gate.json, logs/
 ```

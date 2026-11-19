@@ -29,7 +29,8 @@ Gemini, planning on Codex, coding on Claude, or any mix you choose.
   verify. Claude Code, Codex, Antigravity, Gemini CLI, Grok Build, OpenCode (any provider's model) and Cursor are all
   driven the same way. The ready-made crews are chosen from current benchmarks, SlopCodeBench among them.
 - **Parallel.** Each branch is its own chain of headless sessions in its own git worktree, five at a time by default,
-  each with a live page where the owner follows its progress and answers its questions.
+  each with a tab on the session's one live page, where the owner follows its progress and answers its questions,
+  under a dashboard of the whole run and every pull request it opened (they all carry the run's label).
 - **Context-efficient.** A guard hands a session off at 65% of its context window and stops it at 72%, on every agent:
   through a hook in Claude Code and through the session's event stream elsewhere. Sessions hand over through files,
   never memory, so every session starts sharp.
@@ -234,7 +235,7 @@ agent's skills folder; a `git pull` in the clone then updates it:
 Add `--copy` to copy the skill instead of linking it, for example to commit it to a repository for the whole team.
 
 The agents in a run's crew only need to be installed and signed in; `crew.py check` and the run's `doctor.py` report
-any that are missing. When the orchestrator is an agent other than Claude Code, the live pages are files the owner opens
+any that are missing. When the orchestrator is an agent other than Claude Code, the session page is a file the owner opens
 in a browser and answers in the chat, and planning uses the grilling rounds, since EGM is a Claude Code plugin. See
 [reference/crew.md](skills/laneloop/reference/crew.md).
 

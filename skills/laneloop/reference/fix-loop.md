@@ -12,7 +12,7 @@ sign-off), on whichever agent that pin names: `agent_run.py` starts it ([crew.md
 | `fixloop.sh <slug>` | One chain: creates the worktree and branch from `origin/<base>` (or reuses them), then runs sessions until a final state, `MAX_SESSIONS`, two sessions in a row without progress (status, HEAD, working tree and notes unchanged), or four in a row that only added notes. |
 | `runner.sh` | Runs a queue file's chains, `MAX_PAR` at a time, starting the next as one ends; logs every start and end to `logs/runner.log` and raises a toast. Several runners can share the log. |
 | `task.py` | The branch's state (`.fixloop/status.json`): phase, notes, PR, review proposals, questions for the owner, tasks done, final state. Sessions change state only through it. |
-| `live_page.py`, `live_sync.py` | The branch's live page (`live/<slug>.live.html`, never committed) and the writes that keep it current from `status.json`. The main session publishes and syncs them; chains never touch them. |
+| `live_page.py`, `live_sync.py` | The branch's tab on the orchestrator session's one live page (`live/session.live.html`, never committed) and the writes that keep it current from `status.json`. The main session publishes and syncs it; chains never touch it. |
 | `pr_size.py` | The branch's pull request size against its cap (`PR_MAX_LINES`, 400 by default): added plus removed lines, tests included, lockfiles, generated files and signed-off pages left out. `task.py size` runs it; `task.py` refuses the pr phase and `ready` over the cap. |
 | `gate.py` | The pre-PR gate: every step the project profile names (builds, linters, test suites), detached, with lock slots per step, and each slot's own instances of the services a step needs. A suite fails on more failures than known-flake names matched, named or not, and on zero tests run. |
 | `runbook.md` | Appended to every session's system prompt: the standing overrides, the phases, each mode's rules, the hand-off format. |
@@ -21,21 +21,21 @@ sign-off), on whichever agent that pin names: `agent_run.py` starts it ([crew.md
 Final states: `awaiting_owner` (ready for the owner: a PR with CI read, or a design page), `needs_owner` (a question only
 the owner can answer; the summary is the exact ask), `blocked` (outside the task, or the chain made no progress), `done`.
 
-## Questions, Tasks And The Live Page
+## Questions, Tasks And The Branch's Tab
 
 - **A question that doesn't stop the chain:** `task.py ask "<Title>" "<question>" "<recommended answer>" "<other>" ...`
-  records Q1, Q2, ... on the branch, shows it on the branch's live page and writes a `chain asks` line that wakes the main
+  records Q1, Q2, ... on the branch, shows it on the branch's tab of the session page and writes a `chain asks` line that wakes the main
   session. The chain carries on with the recommended answer; `task.py phase pr` refuses while a question is open, so the
   chain then holds its PR with `task.py needs "holding the pull request until <owner> answers Q1"`. For questions whose
   answer can't change what users see or what is stored, and where redoing the part is cheap. Anything else is `needs`.
-- **The owner's answer** comes back from the page as `task.py answer Q1 "<answer>"` (main session): an `OWNER ANSWER` note
+- **The owner's answer** comes back from the tab as `task.py answer Q1 "<answer>"` (main session): an `OWNER ANSWER` note
   the next session reads first, redoing the part if the answer differs from what it carried on with.
 - **Tasks:** the brief lists the branch's tasks, each with the test that proves it; `task.py done T1 "<how>"` ticks one,
-  and every task is ticked before the pr phase. The live page shows them.
+  and every task is ticked before the pr phase. The branch's tab shows them.
 - **Size:** the brief's `Size cap:` line is the most lines the branch's pull request may change. The chain checks with
   `task.py size` after green and before the pr phase; over the cap it stops with `needs` and a proposed split by task,
   never trims tests or packs code to fit. Only the owner raises a cap (`task.py cap`, main session).
-- **Plain words:** the live page shows the chain's phase lines, notes and questions as written, so the runbook asks for
+- **Plain words:** the branch's tab shows the chain's phase lines, notes and questions as written, so the runbook asks for
   plain words (what changed for the user or the system) and keeps file:line for commits and HANDOFF.md.
 
 ## Modes (one runbook, triggered by the brief and by notes)
@@ -108,9 +108,9 @@ a build brief, or make it a design brief.
   line since, and every `LIVE_SYNC_MIN` minutes (default 10) when a chain's state changed; re-arm it every time. It
   keeps the computer awake while it waits, and returns with `the computer slept for <time>` if it slept anyway.
   `status.py [queue]` lists every branch's state.
-- Each time: sync the live pages and post the attention lines (orchestrator reference, "Live Pages").
+- Each time: sync the session page and post the attention lines (orchestrator reference, "Live Pages").
 - On `awaiting_owner`: read the summary and the notes (look for "HEADS-UP", "Out of scope, seen", known gaps the chain
-  flagged), then act per the orchestrator reference. On `needs_owner`: the ask is on the chain's page; post its link. On
+  flagged), then act per the orchestrator reference. On `needs_owner`: the ask is on the chain's tab; post the page's link. On
   `blocked`: read the last session's log and decide whether to requeue with a note.
 
 ## Typical costs
