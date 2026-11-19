@@ -126,7 +126,8 @@ write_profile "$T/project.json"
 echo "laneloop kit self-test: $(uname -s), bash $("$STUBS/bash" -c 'echo $BASH_VERSION'), $("$PY" --version 2>&1)"
 
 cd "$REPO" || exit 1
-init() { "$PY" "$KIT/init_run.py" "$1" "$2" OWNER=Selftest GH_REPO=o/r GH_LOGIN=selftest PROJECT="$T/project.json" "${@:3}" > "$T/init.log" 2>&1; }
+# every run here shares one temp folder of gate slots, never the machine's own
+init() { "$PY" "$KIT/init_run.py" "$1" "$2" OWNER=Selftest GH_REPO=o/r GH_LOGIN=selftest PROJECT="$T/project.json" GATE_SLOTS="$T/slots" "${@:3}" > "$T/init.log" 2>&1; }
 
 echo "== init_run renders runs whose every command exists on this machine"
 init fix "$T/fix" || { cat "$T/init.log"; exit 1; }
@@ -853,6 +854,73 @@ init fix "$T/fix" PROJECT="$T/nogate.json"
 out=$(gate_run)
 check "a profile with no gate steps fails the gate and says so" sh -c "echo \"\$1\" | grep -q '^gate FAIL' && echo \"\$1\" | grep -q 'no gate.steps'" _ "$out"
 init fix "$T/fix" PROJECT="$T/project.json"
+
+echo "== gate slots: one set for the machine, shared by every run and every project on it"
+check "by default the slots are one folder for the machine, outside every run (~/.laneloop/gate-slots)" "$PY" -c \
+    "import sys; sys.path.insert(0, sys.argv[1]); import init_run as i; assert i.DEFAULTS['GATE_SLOTS'].endswith('/.laneloop/gate-slots'), i.DEFAULTS.get('GATE_SLOTS')" "$KIT"
+# Four runs, each its own project profile, one worktree each (x). p1 and p2: an integration suite with one slot on the
+# stand-in service, p1's slow enough for the others to start meanwhile; p3: the same step given two slots; p4: another
+# project's e2e step on the same service port. The service's commands use its folder as their working directory, not
+# {dir}: these checks are about the slots, on every platform.
+web="w = p['services']['web']; w['start'] = w['start'].replace(' {dir}', ''); w['init'] = 'echo pong > ping.txt'"
+write_profile "$T/px.json" "$web; p['gate']['steps'] = [dict(p['gate']['steps'][2], run='sleep 35; st-run test integration')]"
+write_profile "$T/pz.json" "$web; p['gate']['steps'] = [p['gate']['steps'][2]]"
+write_profile "$T/px2.json" "$web; p['gate']['steps'] = [dict(p['gate']['steps'][2], run='sleep 2; st-run test integration', slots=2)]"
+write_profile "$T/pe.json" "$web; p['gate']['steps'] = [{'name': 'e2e', 'run': 'st-run test e2e', 'tests': 'jest', 'services': ['web']}]"
+for r in p1:px p2:pz p3:px2 p4:pe; do
+    init fix "$T/${r%%:*}" PROJECT="$T/${r#*:}.json"; mkdir -p "$T/${r%%:*}-wt/x/.fixloop"
+done
+gs() { (cd "$T/$1-wt/x" && "$PY" "$T/$1/gate.py" --status 2>&1); }
+gstart() { (cd "$T/$1-wt/x" && GATE_POLL_SECS=1 "$PY" "$T/$1/gate.py" --start >/dev/null 2>&1); }
+gdone() { wait_for "${2:-120}" sh -c "cd '$T/$1-wt/x' && '$PY' '$T/$1/gate.py' --status | grep -qE '^gate (PASS|FAIL)'"; }
+: > "$SELFTEST_LOG"
+gstart p1
+wait_for 60 curl -sf "http://127.0.0.1:$SVC_PORT/ping.txt" -o /dev/null   # p1's suite is running on its service
+gstart p4; gstart p2; gstart p3
+z=""
+for _ in $(seq 1 20); do z=$(gs p2 | head -1); case "$z" in *"waiting for "*) break ;; esac; sleep 1; done
+check "a gate of another run waits for the step's one slot, and --status says for what and behind whom ($z)" \
+    sh -c "echo \"\$1\" | grep -qE '^running since .*waiting for an integration slot, behind p1/x \(since [0-9]{2}:[0-9]{2}\)'" _ "$z"
+check "... gate.json records the wait: the step, who holds its slots, since when" "$PY" - "$T/p2-wt/x/.fixloop/gate.json" <<'EOF'
+import json, re, sys
+w = json.load(open(sys.argv[1], encoding="utf8")).get("waiting") or {}
+assert w.get("step") == "integration" and w.get("behind") == ["p1/x"], w
+assert re.match(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d$", w.get("since", "")), w
+EOF
+lg="$wtr/lg"; mkdir -p "$lg/.fixloop"
+echo '{"slug": "lg", "status": "in_progress", "phase": "gate", "pr": null, "summary": "", "reviews": [], "notes": []}' > "$lg/.fixloop/status.json"
+cp "$T/p2-wt/x/.fixloop/gate.json" "$lg/.fixloop/gate.json"
+(cd "$T/fix" && "$PY" live_page.py lg >/dev/null 2>&1; "$PY" live_sync.py lg > "$T/syncg.json" 2>&1)
+check "... and the chain's tab says its full test run is waiting, and behind whom" "$PY" - "$T/syncg.json" <<'EOF'
+import json, sys
+st = [x["data"] for x in json.load(open(sys.argv[1], encoding="utf8"))["writes"] if x["collection"] == "state"][0]
+assert "waiting for an integration slot, behind p1/x" in st["quiet"], st["quiet"]
+EOF
+(cd "$T/fix" && "$PY" live_sync.py lg --done >/dev/null 2>&1)
+gdone p3 60; w=$(gs p3 | head -1); x=$(gs p1 | head -1)
+check "a profile that gives the step two slots runs beside it meanwhile, in the slot above ($w; p1: $x)" \
+    sh -c "echo \"\$1\" | grep -q '^gate PASS' && echo \"\$2\" | grep -q '^running since'" _ "$w" "$x"
+gdone p4 60; y=$(gs p4)
+check "another project's step on the same service port runs beside it, on a port of its own ($(echo "$y" | head -1))" \
+    sh -c "echo \"\$1\" | grep -q '^gate PASS' && grep 'st-run test e2e' '$SELFTEST_LOG' | grep -q 'SVC=http://127.0.0.1:[0-9]' && ! grep 'st-run test e2e' '$SELFTEST_LOG' | grep -q 'SVC=http://127.0.0.1:$SVC_PORT\$'" _ "$y"
+gdone p1 90; gdone p2 90
+check "once the slot is free the waiting gate runs, and every gate of the four runs passes" \
+    sh -c "for r in p1 p2 p3 p4; do cd '$T'/\$r-wt/x && '$PY' '$T'/\$r/gate.py --status | grep -q '^gate PASS' || exit 1; done"
+check "... with no wait left in its gate.json" "$PY" -c "import json,sys; assert 'waiting' not in json.load(open(sys.argv[1]))" "$T/p2-wt/x/.fixloop/gate.json"
+check "the slots are in the one folder, not in any run's" sh -c "[ -d '$T/slots' ] && ! ls -d '$T'/p[1-4]/locks 2>/dev/null | grep -q ."
+# a gate that dies holding a slot: the next gate, from another run, takes it
+write_profile "$T/pk.json" "p['gate']['steps'] = [dict(p['gate']['steps'][1], run='sleep 60; st-run test unit', slots=1)]"
+write_profile "$T/pk2.json" "p['gate']['steps'] = [dict(p['gate']['steps'][1], slots=1)]"
+for r in p5:pk p6:pk2; do
+    init fix "$T/${r%%:*}" PROJECT="$T/${r#*:}.json"; mkdir -p "$T/${r%%:*}-wt/x/.fixloop"
+done
+gstart p5
+wait_for 20 sh -c "cd '$T/p5-wt/x' && '$PY' '$T/p5/gate.py' --status | grep -q 'step unit'"; sleep 2
+gpid=$("$PY" -c "import json,sys; print(json.load(open(sys.argv[1]))['pid'])" "$T/p5-wt/x/.fixloop/gate.json")
+bash -c "source '$T/fix/platform.sh' && kill_tree $gpid"
+gstart p6; gdone p6 60
+check "a slot whose gate died is freed for the next gate, whichever run it is in ($(gs p6 | head -1))" \
+    sh -c "cd '$T/p6-wt/x' && '$PY' '$T/p6/gate.py' --status | grep -q '^gate PASS'"
 
 echo "== verify ledger: Requires: lines"
 printf '# T1 · Takes A Card Payment\nRequires: payments\n' > "$T/ver/tests/T1.md"
