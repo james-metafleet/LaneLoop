@@ -69,8 +69,8 @@ Each entry is a failure seen in a real run. Symptom → cause → fix.
   name. → `KNOWN_PLATFORM_FAILURES`, apart from flakes: a flake must pass alone, this one can't. Name each as the runner
   prints it.
 - **Two integration runs on one database server clobbered each other.** → The suite uses fixed database names. → One
-  fresh service instance per gate slot, on its slot's own port (`services.py`); a port already in use is an error,
-  never shared.
+  fresh service instance per gate slot, on a port no other gate on the machine holds (`services.py`); a port already
+  in use by another program is an error, never shared.
 - **The verify database's data sat in a session's scratchpad under /tmp.** → macOS clears temp folders, and the seeded
   test accounts go with them. → The verify loop's services keep their data in a `persist` folder under `~/.laneloop/`.
 - **An unattended run stopped overnight.** → The Mac slept. → `launch.sh` runs loops under `caffeinate -is` and refuses
@@ -106,6 +106,12 @@ Each entry is a failure seen in a real run. Symptom → cause → fix.
 - **The gate passed with zero integration tests.** → A stalled test-database host reported a pass with nothing run. → A
   suite that ran zero tests fails the gate (every parser counts what ran).
 - **Timing tests failed only under load.** → Several gates share the machine. → `KNOWN_FLAKES`, and confirm each one alone.
+- **Every gate crawled with several runs going.** → The gate slots lived in each run's own folder, so a step's count held
+  per run: with four or five runs at once a 24-thread machine ran up to 8 integration and 12 unit suites together, and
+  the integration suite took 2,000-6,800 s (1,100-1,350 s alone), unit up to 3,400 s (350-560 s). Two runs holding
+  slot 0 of a step also started its service on the same port. → One set of slots for the machine (`GATE_SLOTS`,
+  `~/.laneloop/gate-slots`), shared by every run and project; each service instance on a port no other gate holds. A
+  gate over the limit waits, and `gate.py --status` says for which slot and behind whom.
 - **Brief line numbers were off.** → The investigation read an older base. → Say which commit the notes came from.
 - **A chain couldn't file a ticket or run a migration script.** → The tracker and script runners aren't allowed in chains. → The chain
   notes what to file; the orchestrator files it; a migration script runs first as a dry run on dev.
@@ -119,7 +125,7 @@ Each entry is a failure seen in a real run. Symptom → cause → fix.
 
 - **Changing a running loop's script.** → bash reads a script as it runs, so editing `runner.sh` or `qa-loop.sh` under a
   live run can break it mid-loop. → Leave running scripts alone: start a second runner on its own queue
-  (`start.sh <queue>`; runners share the log and the gate slots), or change the runbook, which every new session reads.
+  (`start.sh <queue>`; runners share the log, and every run on the machine shares the gate slots), or change the runbook, which every new session reads.
 - **A placeholder step ran for real.** → A "no-op" tool call was sent in parallel with a publish and executed
   (`post_publish.sh` with `PLACEHOLDER`, then `PENDING`). → Never put a placeholder call next to a real one;
   `post_publish.sh` refuses anything that isn't an artifact URL.

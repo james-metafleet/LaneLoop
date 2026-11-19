@@ -2,8 +2,9 @@
 "services" declares them. Nothing here knows any particular one: kit/presets/services has Postgres, MySQL, MongoDB,
 Redis and SQLite, each in Docker or native, to start from.
 
-The gate starts a fresh instance per test slot for each step that names a service, on `port` + slot, and removes it
-after: two chains never share one, so suites with fixed database names can't clobber each other. The verify loop starts
+The gate starts a fresh instance per test slot for each step that names a service, on `port` + the lowest offset no
+other gate on the machine holds, and removes it after: two chains never share one, so suites with fixed database names
+can't clobber each other. The verify loop starts
 the app's own for the length of the run, with these per-use overrides (project.json verify.services as an object):
   persist   a folder for {dir} that is kept between runs (data survives, as a container's volume would)
   seed      a command run once, when the persist folder is new (load the test data the app's sign-in needs)

@@ -61,7 +61,7 @@ Run task.py and gate.py with these exact paths (they are allow-listed): `{{PYTHO
    rule's `needs`.
 3. **docs**: update the matching docs sections (and the decisions log if the brief records a decision). Commit.
 4. **gate**: `{{PYTHON}} {{RUN}}/gate.py --start`, then poll `{{PYTHON}} {{RUN}}/gate.py --status` with
-   `{{PYTHON}} {{RUN}}/task.py wait 300` between polls (it takes a while; other branches share the test slots).
+   `{{PYTHON}} {{RUN}}/task.py wait 300` between polls (it takes a while; every branch and run on the machine shares the test slots, and `--status` says when it waits).
    If the verdict line says a check was "not checked on this machine" ({{OWNER}}'s decision, loop.conf GATE_SKIP), that is
    a pass for this phase, never yours to change: the pr and ci phases below say what it costs.
    Unexpected failures: fix them if your change caused them; if they also fail on {{BASE}}, note it and carry on.

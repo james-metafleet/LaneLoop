@@ -263,11 +263,13 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
   runbook.md, settings.json     appended to / given to every session (permissions, hooks)
   ctx_guard.py, end_gate.py     the hooks; logs/ctx.log has every reading
   verify: ledger.json, tests/, guide/, evidence/, HANDOFF.md, PAUSED.md, REPORT.md
-  fix:    plan.json (with an EGM run's design, journeys and files), fanout.md, briefs/, queue-*.txt, logs/runner.log, replies/, design-pages.md, locks/ (gate slots)
+  fix:    plan.json (with an EGM run's design, journeys and files), fanout.md, briefs/, queue-*.txt, logs/runner.log, replies/, design-pages.md
   live/                         session.live.html (never committed), tabs.json, urls.json (the session and plan pages),
                                 sync.json, pending.json, and per chain <slug>.recs.json
   consults/                     <name>.md: each research or plan question's answer; <name>/ its prompt, log and meta
 <WT_ROOT>/<slug>/.fixloop/      per branch: brief.md, status.json, HANDOFF.md, gate.json, logs/
+~/.laneloop/gate-slots/         the gate's slots and service ports, one set for the machine: every run of every project
+                                shares them (GATE_SLOTS)
 ```
 
 ## References
