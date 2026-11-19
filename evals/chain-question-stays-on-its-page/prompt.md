@@ -1,5 +1,5 @@
 ---
-description: "A chain's question goes to the owner as one line with its live page link, not pasted into the chat."
+description: "A chain's question goes to the owner as one line with the session page's link, not pasted into the chat."
 tags: [live-pages]
 runs: 3
 max_turns: 8

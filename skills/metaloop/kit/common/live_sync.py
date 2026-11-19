@@ -1,23 +1,30 @@
-"""Keep each live page current from the run's state. Prints the writes for the ArtifactData tool; nothing reaches a page
-until the main session writes them, and then marks them written with --done.
+"""Keep the session's live page current from this run folder's state: one tab per task (live_page.py adds them). Prints
+the writes for the ArtifactData tool; nothing reaches the page until the main session writes them, and then marks them
+written with --done.
 
-  python live_sync.py <slug> [<slug> ...]|verify|--all     the pending writes, as JSON {"pages": [{"slug", "url", "writes",
-                                                 "attention"}]}. Write each page's "writes" with ArtifactData (action
-                                                 batch, the page's url, at most 50 writes per call, in order)
-  python live_sync.py <...> --done                 after every batch succeeded: mark those writes as written
-  python live_sync.py --attention                  the main window's lines, one per thing a page needs the owner for, each
-                                                   with its link: post these, and nothing else about a chain, in the chat
+  python live_sync.py --all | <tab> [<tab> ...]   the pending writes, as JSON {"url", "writes", "attention"}. Write
+                                                 "writes" with ArtifactData (action batch, that url, at most 50 writes
+                                                 per call, in order)
+  python live_sync.py <...> --done                after every batch succeeded: mark those writes as written
+  python live_sync.py --attention                 the main window's lines, one per thing a tab needs the owner for, each
+                                                  with the page's link: post these, and nothing else about a task, in
+                                                  the chat
 
---all is every page recorded with live_page.py --url. Every write creates a new document (a new state, a new line, a new
-question), so no write needs a version and none can race the owner's answers on the page. The page shows the newest state.
-The writes are kept in live/<slug>.pending.json and offered again until --done.
+--all is every tab of this run folder. The page's collections are flat and every document names its `tab`:
+state/<tab> (one per tab, replaced as the task moves; only the main session writes it), session/<run> (the run's PR
+label, repository, base and plan page), and events, asks, reviews and replies keyed <tab>~<id>. The owner's answers and
+approvals come back as answers/<tab>~<question id> and approvals/<tab>~r<n>. Events, questions and review items each
+create a new document, so none can race the owner's answers on the page. The writes are kept in live/pending.json and
+offered again until --done; live/sync.json is what each tab has been sent.
 """
 import hashlib, json, os, re, sys
+from urllib.parse import quote_plus
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONF = json.load(open(os.path.join(HERE, "loop.json"), encoding="utf8"))
 LIVE = os.path.join(HERE, "live")
 OWNER = CONF.get("OWNER", "the owner")
+DOC_WARN = 20000   # an artifact's database holds at most 25,000 documents
 TS = r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)"
 BUILD = [("red", "Failing test"), ("green", "Fix"), ("docs", "Docs"), ("gate", "Full test run"),
          ("security", "Security review"), ("pr", "Pull request"), ("ci", "CI and review")]
@@ -80,8 +87,9 @@ def plain(text):
 def chain(slug, recs=None):
     """The page's content for one chain: its state, its lines, its questions and its review items (each with a key)."""
     fl = os.path.join(CONF["WT_ROOT"], slug, ".fixloop")
+    merged = False
     if not os.path.exists(os.path.join(fl, "status.json")) and os.path.exists(os.path.join(HERE, "retired", slug, "status.json")):
-        fl = os.path.join(HERE, "retired", slug)   # merged: retire.sh removed the worktree and kept its state here
+        fl, merged = os.path.join(HERE, "retired", slug), True   # retire.sh removed the worktree and kept its state here
     brief = read(os.path.join(fl, "brief.md")) or read(os.path.join(HERE, "briefs", f"{slug}.md"))
     d = jload(os.path.join(fl, "status.json"), {"status": "todo", "phase": None, "pr": None, "notes": [], "reviews": []})
     notes, st = d.get("notes", []), d.get("status", "todo")
@@ -143,7 +151,7 @@ def chain(slug, recs=None):
     state = dict(title=title, kind="chain", branch=d.get("branch") or f"{CONF.get('BRANCH_PREFIX', '')}{CONF.get('SLUG_PREFIX', '')}{slug}",
                  pr=d.get("pr"), badge={"tone": badge[0], "text": badge[1]}, quiet=quiet, steps=steps, tasks=tasks,
                  counts=None, started=times[0] if times else "", at=times[-1] if times else "", sessions=len(runs),
-                 cost=round(cost, 2), answered=answered, holding=holding)
+                 cost=round(cost, 2), answered=answered, holding=holding, merged=merged, status=st)
     events = []
     for i, n in enumerate(notes):
         m = re.match(TS + r"\s+(.*)", n, re.S)
@@ -181,7 +189,7 @@ def verify():
                  pr=None, badge={"tone": badge[0], "text": badge[1]}, quiet=quiet, steps=[], tasks=[], counts=c,
                  started=times[0] if times else "", at=times[-1] if times else "", sessions=len(d.get("sessions", [])),
                  cost=round(sum(float(s.get("cost") or 0) for s in d.get("sessions", []) if isinstance(s, dict)), 2),
-                 answered={}, holding=False)
+                 answered={}, holding=False, merged=False, status="done" if badge[1] == "Done" else "in_progress")
     said = {"pass": ("passed", "ok"), "fail": ("failed", "warn"), "blocked": ("set aside", "")}
     events = []
     for t in tests:
@@ -202,41 +210,73 @@ def verify():
     return state, events, cards, [], lines
 
 
-def page(slug):
-    """The writes this page still needs, from what was last marked written, and its attention lines."""
-    sync = jload(os.path.join(LIVE, f"{slug}.sync.json"), {"events": 0, "keys": [], "states": 0, "state": "", "asks": [], "reviews": []})
-    if slug == "verify" and CONF.get("KIND") == "verify":
+def gh_url(label=None):
+    repo = CONF.get("GH_REPO", "")
+    if not re.match(r"^[\w.-]+/[\w.-]+$", repo):
+        return ""
+    base = f"https://github.com/{repo}"
+    return f"{base}/pulls?q=" + quote_plus(f'is:pr label:"{label}"', safe="") if label else base
+
+
+def session_doc():
+    """What the dashboard shows of this run: its PR label (a fix run's), repository, base and the plan page."""
+    label = CONF.get("PR_LABEL", "") if CONF.get("KIND") == "fix" else ""
+    return dict(run=CONF.get("RUN_NAME", ""), kind=CONF.get("KIND", ""), label=label, labelUrl=gh_url(label) if label else "",
+                repo=CONF.get("GH_REPO", ""), repoUrl=gh_url(), base=CONF.get("BASE", ""), owner=OWNER,
+                plan=urls().get("plan", ""), tabs=tabs())
+
+
+def tabs():
+    return jload(os.path.join(LIVE, "tabs.json"), [])
+
+
+def content(tab, order):
+    if tab == "verify" and CONF.get("KIND") == "verify":
         state, events, cards, items, lines = verify()
     else:
-        state, events, cards, items, lines = chain(slug, jload(os.path.join(LIVE, f"{slug}.recs.json"), {}))
-    peers = [{"slug": s, "url": u} for s, u in sorted(urls().items()) if s != slug]
+        state, events, cards, items, lines = chain(tab, jload(os.path.join(LIVE, f"{tab}.recs.json"), {}))
+    state.update(tab=tab, order=-1 if state["kind"] == "verify" else order, run=CONF.get("RUN_NAME", ""))
+    return state, events, cards, items, lines
+
+
+def digest(obj):
+    return hashlib.sha1(json.dumps(obj, sort_keys=True).encode("utf8")).hexdigest()
+
+
+def tab_writes(tab, order, sync):
+    """The writes this tab still needs, from what was last marked written, and its attention lines."""
+    sync = dict({"events": 0, "keys": [], "state": "", "asks": [], "reviews": []}, **sync)
+    state, events, cards, items, lines = content(tab, order)
     writes, new = [], json.loads(json.dumps(sync))
     keys = set(sync["keys"])
     for key, at, text, tone in events:
         if key in keys:
             continue
         new["events"] += 1; new["keys"].append(key)
-        writes.append({"op": "set", "collection": "events", "doc_id": f"e{new['events']:06d}",
-                       "data": {"seq": new["events"], "at": at, "text": text, "tone": tone}})
+        writes.append({"op": "set", "collection": "events", "doc_id": f"{tab}~e{new['events']:06d}",
+                       "data": {"tab": tab, "seq": new["events"], "at": at, "text": text, "tone": tone}})
     for q in cards:
         if q["id"] not in sync["asks"]:
             new["asks"].append(q["id"])
-            writes.append({"op": "set", "collection": "asks", "doc_id": q["id"], "data": q})
+            writes.append({"op": "set", "collection": "asks", "doc_id": f"{tab}~{q['id']}", "data": dict(q, tab=tab)})
     current = {q["id"] for q in cards}
-    for qid in sync["asks"]:   # a card the run no longer needs (a sign-in done, a set-aside test requeued) leaves the page
+    for qid in sync["asks"]:   # a card the run no longer needs (a sign-in done, a set-aside test requeued) leaves the tab
         if qid not in current:
             state["answered"].setdefault(qid, "signed in" if "@signin@" in qid else "answered")
     for r in items:
         if r["id"] not in sync["reviews"]:
             new["reviews"].append(r["id"])
-            writes.append({"op": "set", "collection": "reviews", "doc_id": r["id"], "data": r})
-    state["peers"] = peers   # in the hash: a page published later reaches the pages with nothing else new
-    h = hashlib.sha1(json.dumps(state, sort_keys=True).encode("utf8")).hexdigest()
+            writes.append({"op": "set", "collection": "reviews", "doc_id": f"{tab}~{r['id']}", "data": dict(r, tab=tab)})
+    h = digest(state)
     if h != sync["state"]:
-        new["states"] += 1; new["state"] = h
-        writes.append({"op": "set", "collection": "state", "doc_id": f"s{new['states']:06d}",
-                       "data": dict(state, seq=new["states"])})
+        new["state"] = h
+        writes.append({"op": "set", "collection": "state", "doc_id": tab, "data": state})
     return writes, new, lines
+
+
+def documents(sync):
+    return sum(1 + v.get("events", 0) + len(v.get("asks", [])) + len(v.get("reviews", []))
+               for k, v in sync.items() if k != "_session") + 1
 
 
 def main(a):
@@ -244,32 +284,43 @@ def main(a):
         print(__doc__); sys.exit(2)
     sys.stdout.reconfigure(encoding="utf-8")   # redirected on Windows, stdout is cp1252: no "→", no "·" in some notes
     os.makedirs(LIVE, exist_ok=True)
-    known = urls()
+    url = urls().get("session", "")
+    order = {t: i for i, t in enumerate(tabs())}
+    sync_path, pend = os.path.join(LIVE, "sync.json"), os.path.join(LIVE, "pending.json")
+    sync = jload(sync_path, {})
     if a[0] == "--attention":
-        for slug, url in sorted(known.items()):
-            for line in page(slug)[2]:
-                print(f"{line} → {url}")
+        for tab in order:
+            for line in tab_writes(tab, order[tab], sync.get(tab, {}))[2]:
+                print(f"{line} → {url or '(the session page is not published yet)'}")
         return
-    done = "--done" in a
-    slugs = sorted(known) if "--all" in a else [s for s in a if not s.startswith("--")]
-    out = []
-    for slug in slugs:
-        pend = os.path.join(LIVE, f"{slug}.pending.json")
-        if done:
-            p = jload(pend, None)
-            if p:
-                json.dump(p["sync"], open(os.path.join(LIVE, f"{slug}.sync.json"), "w", encoding="utf8"), indent=1)
-                os.remove(pend)
-                print(f"{slug}: {len(p['writes'])} writes marked written")
-            continue
-        writes, new, lines = page(slug)
-        json.dump({"writes": writes, "sync": new}, open(pend, "w", encoding="utf8"), indent=1, ensure_ascii=False)
-        out.append({"slug": slug, "url": known.get(slug), "writes": writes, "attention": lines})
-    if not done:
-        print(json.dumps({"pages": out}, ensure_ascii=False, indent=1))
-        missing = [p["slug"] for p in out if not p["url"]]
-        if missing:
-            print(f"not published yet (live_page.py, then --url): {', '.join(missing)}", file=sys.stderr)
+    if "--done" in a:
+        p = jload(pend, None)
+        if p:
+            json.dump(p["sync"], open(sync_path, "w", encoding="utf8"), indent=1)
+            os.remove(pend)
+            print(f"{len(p['writes'])} writes marked written")
+        return
+    want = list(order) if "--all" in a else [t for t in a if not t.startswith("--")]
+    unknown = [t for t in want if t not in order]
+    if unknown:
+        sys.exit(f"not a tab of this run: {', '.join(unknown)} (live_page.py {' '.join(unknown)} adds it)")
+    writes, new, lines = [], json.loads(json.dumps(sync)), []
+    sess = session_doc()
+    if digest(sess) != sync.get("_session"):
+        writes.append({"op": "set", "collection": "session", "doc_id": sess["run"] or "run", "data": sess})
+        new["_session"] = digest(sess)
+    for tab in want:
+        w, s, l = tab_writes(tab, order[tab], sync.get(tab, {}))
+        writes += w; new[tab] = s; lines += l
+    json.dump({"writes": writes, "sync": new}, open(pend, "w", encoding="utf8"), indent=1, ensure_ascii=False)
+    print(json.dumps({"url": url, "writes": writes, "attention": [f"{x} → {url}" for x in lines]}, ensure_ascii=False, indent=1))
+    if not url:
+        print("the session page is not published yet: live_page.py, publish it, then live_page.py --url <url> "
+              "(or, if this session's page is already up, only --url)", file=sys.stderr)
+    n = documents(new)
+    if n >= DOC_WARN:
+        print(f"warning: this run has written {n} documents to the session page; an artifact holds at most 25,000. "
+              f"Start the next run of this session on a page of its own", file=sys.stderr)
 
 
 if __name__ == "__main__":

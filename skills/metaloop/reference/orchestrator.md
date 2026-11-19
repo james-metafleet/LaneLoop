@@ -20,7 +20,7 @@ Everything the main session does, in the order it comes up. Commands run from th
   pages. Session time caps and `WAIT_HOURS` count awake time, and a session the computer slept through without
   progress is no strike.
 - When you've been quiet a while, say in a line what you're doing.
-- Every time a watcher returns, before anything else: sync the live pages and post the attention lines ("Live Pages"
+- Every time a watcher returns, before anything else: sync the session page and post the attention lines ("Live Pages"
   below). The chat never carries a chain's question itself, only its link.
 
 ## Missing dependencies (set-up, before the first start)
@@ -123,7 +123,7 @@ the cap is how the run keeps every PR reviewable.
 
 A chain checks its size with `task.py size` as it builds, and `task.py` refuses the pr phase, and `ready`, over its cap.
 So a chain that won't fit stops with `needs`: "over the size cap: N of CAP lines; split: <tasks that stay> here, <tasks
-that move> to a follow-up branch". Its commits stay on the branch. The ask is on its live page; the choice is the
+that move> to a follow-up branch". Its commits stay on the branch. The ask is on its tab of the session page; the choice is the
 owner's, because the plan changes.
 
 - **Split** (the usual answer): add the follow-up branch to `plan.json` with the tasks that move, their tests and an
@@ -139,29 +139,44 @@ owner's, because the plan changes.
 
 ## Live Pages
 
-Every chain, and the verify loop, has a live page: the owner's one place to see it, answer it and ask it things. The main
-window carries none of that conversation. A message there scrolls away; the page keeps an unanswered question on top.
+The orchestrator session has ONE live page: a dashboard of the whole session (the PR label every pull request of the
+run carries, linked to the list of them; what is running, what needs the owner, what is ready for review, what is done;
+PRs open and merged; sessions and cost; the plan page) over a tab per task, one for each chain and one for the verify
+loop. Each tab is the owner's one place to see that task, answer it and ask it things. The main window carries none of
+that conversation. A message there scrolls away; the tab keeps an unanswered question on top, and the tab strip marks
+every tab that needs the owner.
 
-1. **Publish before the start.** `live_page.py <slug> ...` (the verify run: `live_page.py verify`) writes
-   `live/<slug>.live.html` in the run folder and prints the capabilities. Publish each with the Artifact tool (that
-   file, those capabilities, icon `pulse`), then `live_page.py --url <slug> <url>`. Never copy a page into the repo:
-   `*.live.html` is ignored, and the pages hold run state.
-2. **Sync whenever a watcher returns.** `live_sync.py --all` prints each page's pending writes; write them with
-   `ArtifactData` (action `batch`, the page's url, up to 50 per call, in order), then `live_sync.py --all --done`. Every
-   write creates a document, so no versions are needed. Nothing reaches a page you don't write.
-3. **Post the attention lines.** `live_sync.py --attention` prints one line per thing a page needs the owner for
-   ("Needs you · <slug>: <one line> → <link>", "Ready · <slug>: ... → <link>"). Post exactly those, and post them again
+1. **Publish once, before the first start.** `live_page.py --title "<Session Title>" <tab> ...` in the first run folder
+   (a fix run's chain slugs, or `verify` in a verify run folder) records the tabs and writes `live/session.live.html`;
+   it prints the capabilities. Publish it with the Artifact tool (that file, those capabilities, icon `pulse`), then
+   `live_page.py --url <url>`. A later run folder of the same session (the fix run after the verify run, or the other
+   way round) adds its own tabs with `live_page.py <tab> ...` and records the SAME url with `live_page.py --url <url>`:
+   it never publishes a page of its own. A later wave adds its chains the same way; new tabs reach the page with the
+   next sync, without a republish. `live_page.py --plan-url <url>` puts the plan page's link on the dashboard. Never copy
+   the page into the repo: `*.live.html` is ignored, and the page holds run state. `verify` is the verify loop's tab id;
+   a chain can't be called that.
+2. **Sync whenever a watcher returns.** `live_sync.py --all` in each run folder of the session prints `{"url", "writes",
+   "attention"}`; write `writes` with `ArtifactData` (action `batch`, that url, up to 50 per call, in order), then
+   `live_sync.py --all --done`. Nothing reaches the page you don't write. Its collections are flat and every document
+   names its `tab`: `state/<tab>` (one per tab, replaced as the task moves), `session/<run>` (the run's label,
+   repository, base and plan page), and `events`, `asks`, `reviews` and `replies` keyed `<tab>~<id>`. A page holds at
+   most 25,000 documents; the sync warns from 20,000.
+3. **Post the attention lines.** `live_sync.py --attention` prints one line per thing a tab needs the owner for
+   ("Needs you · <tab>: <one line> → <link>", "Ready · <tab>: ... → <link>"). Post exactly those, and post them again
    in every status update until each is answered.
-4. **Relay what the owner does on a page.** Only the owner can write a page's answers, approvals and sign-off (the
-   capabilities the scripts print make them owner-only); anyone the page is shared with can read it and Ask Claude. A Send to Claude from a page wakes you; otherwise read the page's
-   `answers` and `approvals` when you sync. An answer to a chain's question: `task.py answer Q1 "<answer>"` in its
-   worktree, and if the chain stopped holding its PR, `task.py requeue "answered"` and queue it. An answer to a `needs`
-   stop: `task.py note "OWNER ANSWER needs-<n> (<owner>): <answer>"`, requeue. A verify ask: requeue the test with the
-   answer as a note. Then write `replies/<id>` saying what you did with it.
-5. **Answer every question** sent from a page, in its thread and in `replies` (a free question gets a `q-<n>` doc with
-   `question`, `where`, `text`, `at`), from the chain's notes, HANDOFF.md, commits and logs. Check every claim first.
-6. **Ten watches at most.** A session watches at most 10 artifacts. Stop watching a chain's page once its PR merges
-   (`ArtifactComments` watch, `on: false`); for pages beyond ten, read their `answers` and comments on every sync.
+4. **Relay what the owner does on a tab.** Only the owner can write the page's answers and approvals (the capabilities
+   the script prints make every collection owner-only); anyone the page is shared with can read it and Ask Claude. A
+   Send to Claude from the page wakes you (its text names the tab); otherwise read `answers` and `approvals` when you
+   sync. Their ids name the tab: `answers/<tab>~Q1`, `approvals/<tab>~r2`. An answer to a chain's question: `task.py
+   answer Q1 "<answer>"` in that chain's worktree, and if the chain stopped holding its PR, `task.py requeue "answered"`
+   and queue it. An answer to a `needs` stop: `task.py note "OWNER ANSWER needs-<n> (<owner>): <answer>"`, requeue. A
+   verify ask: requeue the test with the answer as a note. Then write `replies/<tab>~<id>` (with `tab`) saying what you
+   did with it.
+5. **Answer every question** sent from a tab, in its thread and in `replies` (a free question gets a `<tab>~q-<n>` doc
+   with `tab`, `question`, `where`, `text`, `at`), from the task's notes, HANDOFF.md, commits and logs. Check every claim
+   first.
+6. **One watch.** The session's page is one artifact, so one `ArtifactComments` watch covers every task, however many
+   chains run (a session can watch at most 10 artifacts: the plan page and the design pages share the rest).
 
 ## Design and schema pages
 
@@ -180,16 +195,16 @@ window carries none of that conversation. A message there scrolls away; the page
    recommended, or comment first. Then `record_signoff.py signoffs.json queue-build.txt <date>` (try `--dry-run` first) and
    start the build queue.
 
-## Review Comments, On Each Chain's Page
+## Review Comments, On Each Chain's Tab
 
 1. When a chain ends `awaiting_owner` with review items, read every proposal (`task.py show`, `status.json` reviews).
 2. Set your own recommendation per item in `live/<slug>.recs.json`: `{"1": {"rec": "Apply", "what": "...", "proposal":
    "..."}}`, rec **Apply** (as proposed), **Reply only** (no change, with the reason) or **Owner's call** (say what you
    recommend). `what` and `proposal` restate the bot's words as what the user or the system sees: who is affected, what
    they see, the fix in one line. Wording a signed-off page doesn't settle is always Owner's call.
-3. Sync: each item goes up on the chain's page with its recommendation. Post its "Ready" line. The owner approves all as
-   recommended on the page, or adds a note to change one.
-4. From the page's `approvals` (and any note), write `approvals.json` and run `approve.py approvals.json
+3. Sync: each item goes up on the chain's tab with its recommendation. Post its "Ready" line. The owner approves all as
+   recommended on the tab, or adds a note to change one.
+4. From the page's `approvals` for that tab (`approvals/<tab>~r<n>`, and any note), write `approvals.json` and run `approve.py approvals.json
    queue-review.txt "<how approved>"`, then start the runner on the queue. Answer the PRs whose items are all reply-only
    straight away.
 5. As each chain ends:

@@ -45,6 +45,17 @@ if [ -n "$plan" ] || [ "${1:-}" = "--preflight-only" ]; then
 fi
 log "preflight ok: code pin $CODE_PIN$plan · MAX_PAR=$MAX_PAR · queue $QUEUE"
 [ "${1:-}" = "--preflight-only" ] && exit 0
+# The run's PR label (loop.conf PR_LABEL) must exist before a chain opens a pull request with it: gh refuses an unknown
+# label, and a chain may not make one. Empty PR_LABEL = no label.
+if [ -n "${PR_LABEL:-}" ]; then
+    if out=$(gh label create "$PR_LABEL" --repo "$GH_REPO" --color 2563EB --force \
+                --description "Pull requests from the MetaLoop run ${RUN_NAME:0:60}" 2>&1); then
+        log "PR label ready: $PR_LABEL on $GH_REPO"
+    else
+        log "STOP: could not create the PR label '$PR_LABEL' on $GH_REPO: $(echo "$out" | tr '\n' ' ' | cut -c1-300). Fix gh's access to the repository, or set PR_LABEL= (empty) in loop.conf to open pull requests without a label"
+        notify "Runner stopped" "could not create the PR label $PR_LABEL"; exit 1
+    fi
+fi
 SLUGS=(); PIDS=()   # the running chains: SLUGS[k] runs as PIDS[k]
 
 reap() {  # log every chain that has ended and drop it from the running lists

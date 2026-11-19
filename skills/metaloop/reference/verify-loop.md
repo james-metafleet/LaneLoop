@@ -60,7 +60,7 @@ isn't forced through the database.
   its own: which window (the run's Chrome, its profile path), the URL to start from, exactly what to do and pick, what to
   leave open, what the session will check after.
 - **Everything else** goes through `ledger.py needs <ID> "<exact ask>"`: the test is recorded as blocked with the ask and
-  the run goes on. The ask goes on the run's live page, where the owner answers it, and into `REPORT.md`.
+  the run goes on. The ask goes on the verify tab of the session page, where the owner answers it, and into `REPORT.md`.
 - The wrapper shows the pause in its window, raises a toast, and waits for Enter / `s` / `q` or a `RESUME`, `SKIP` or `QUIT`
   file in the run folder.
 
@@ -73,13 +73,14 @@ session sees them through `ledger.py next`. Never edit `qa-loop.sh` while it run
 
 ## The orchestrator's job while it runs
 
-0. **Its live page** goes up before the start (`live_page.py verify` in this run folder, publish, `--url`): each test's
-   result as it is recorded, the counts, every ask, and the sign-in when it pauses. It is never committed.
+0. **Its tab** goes on the session page before the start (`live_page.py verify` in this run folder; publish the page
+   if this session has none yet; `--url`): each test's result as it is recorded, the counts, every ask, and the sign-in
+   when it pauses. It is never committed.
 1. **Watch it.** `wait_verify.sh` as a background task, re-armed after every event. It returns on PAUSED, the end, a STOP,
    and every `LIVE_SYNC_MIN` minutes when the ledger changed; it keeps the computer awake, and returns with `the
    computer slept for <time>` if it slept anyway (check the loop and the app still run). Each time: `live_sync.py
    verify`, write, `--done`, and post the `live_sync.py --attention` lines (orchestrator reference, "Live Pages"). An
-   answer on the page to an ask: requeue the test with the answer as a note.
+   answer on the verify tab to an ask: requeue the test with the answer as a note.
 2. **On a pause:** read `PAUSED.md`; bring the run's Chrome to the front on the right tab
    (`raise_chrome.sh <host>`: the tab over the debug port, then the window, through `raise_chrome.ps1` on Windows and
    System Events on macOS, which asks once for Automation permission); tell the owner in two or three

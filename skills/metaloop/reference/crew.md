@@ -166,7 +166,7 @@ links `skills/metaloop` into that agent's user skills folder, and `./install.sh 
 What changes when the orchestrator isn't Claude Code:
 
 - **`<kit>`** is the `kit` folder beside the installed `SKILL.md` (Claude Code passes it as `${CLAUDE_SKILL_DIR}/kit`).
-- **Live pages** are claude.ai Artifacts. Elsewhere the pages are still built (`live/<slug>.live.html`, `plan.html`) for
+- **Live pages** are claude.ai Artifacts. Elsewhere the pages are still built (`live/session.live.html`, `plan.html`) for
   the owner to open in a browser, read-only: the owner answers in the chat, and the orchestrator records each answer
   with `task.py answer` (chains) or in `plan.json` (plan rounds).
 - **EGM** is a Claude Code plugin: plan with `PLANNER=grill`, and use `consult.py plan` for the outside review a

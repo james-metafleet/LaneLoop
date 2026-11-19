@@ -15,6 +15,9 @@ settings.json) is kept, and the new render is written beside it as <name>.new.
 import hashlib, json, os, re, shlex, shutil, subprocess, sys
 
 KIT = os.path.dirname(os.path.abspath(__file__))
+# Every pull request a fix run opens carries the label <LABEL_PREFIX><run name> (loop.conf PR_LABEL; empty = no label),
+# so the session page links all of a run's PRs at once.
+LABEL_PREFIX = "metaloop:"
 sys.path.insert(0, os.path.join(KIT, "common"))
 import crew  # noqa: E402
 WINDOWS = os.name == "nt"
@@ -267,6 +270,11 @@ def main(a):
         conf["GH_LOGIN"] = sh("gh", "api", "user", "-q", ".login")
     if not conf["GH_REPO"]:
         sys.exit("gh could not name the repository (gh auth status?); pass GH_REPO=owner/name")
+    if "PR_LABEL" not in conf:
+        conf["PR_LABEL"] = (LABEL_PREFIX + conf["RUN_NAME"])[:50]
+    if len(conf["PR_LABEL"]) > 50:
+        sys.exit(f"PR_LABEL is {len(conf['PR_LABEL'])} characters; GitHub takes at most 50")
+    conf["PR_LABEL_ARG"] = f" --label {shlex.quote(conf['PR_LABEL'])}" if conf["PR_LABEL"] else ""
     if not (0 < float(conf["SOFT_PCT"]) < float(conf["HARD_PCT"]) < 75):
         sys.exit("thresholds must satisfy 0 < SOFT_PCT < HARD_PCT < 75")
 

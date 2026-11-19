@@ -77,7 +77,20 @@ with Server(("127.0.0.1", port), functools.partial(http.server.SimpleHTTPRequest
     print(f"serving {folder} on 127.0.0.1:{port}", flush=True)
     s.serve_forever()
 EOF
-chmod +x "$STUBS/claude" "$STUBS/st-run"
+# gh: `label create` is logged (SELFTEST_GH_LABEL_FAIL makes it fail as a token without access would); anything else goes
+# to the real gh when there is one.
+REAL_GH="$(command -v gh || true)"
+cat > "$STUBS/gh" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = label ] && [ "\$2" = create ]; then
+    echo "gh \$*" >> "\$SELFTEST_LOG.gh"
+    [ -n "\${SELFTEST_GH_LABEL_FAIL:-}" ] && { echo "HTTP 403: Resource not accessible by integration"; exit 1; }
+    exit 0
+fi
+[ -n "$REAL_GH" ] && exec "$REAL_GH" "\$@"
+echo "gh: command not found" >&2; exit 127
+EOF
+chmod +x "$STUBS/claude" "$STUBS/st-run" "$STUBS/gh"
 ln -s "${SELFTEST_BASH:-$(command -v bash)}" "$STUBS/bash"
 export PATH="$STUBS:$PATH" SELFTEST_LOG="$T/steps.log"
 
@@ -518,6 +531,19 @@ for s in alpha beta-error gamma; do
 done
 check "runner: all chains ended" grep -q "all chains ended" "$T/fix/logs/runner.log"
 check "runner: a queue with no design branch checks only the code pin" sh -c "! grep -q 'plan pin' '$T/fix/logs/runner.log'"
+check "runner: makes the run's PR label on the repository" \
+    grep -qF -- 'gh label create metaloop:fix --repo o/r --color 2563EB --force' "$T/steps.log.gh"
+check "... before any chain starts" "$PY" - "$T/fix/logs/runner.log" <<'EOF'
+import sys
+lines = open(sys.argv[1]).read().splitlines()
+ready = [i for i, l in enumerate(lines) if "PR label ready: metaloop:fix on o/r" in l]
+started = [i for i, l in enumerate(lines) if "chain started" in l]
+assert ready and started and ready[0] < started[0], lines
+EOF
+check "the runbook opens every pull request with that label" grep -qF -- '--label metaloop:fix --title' "$T/fix/runbook.md"
+out=$(cd "$T/fix" && SELFTEST_GH_LABEL_FAIL=1 QUEUE=queue-test.txt STAGGER_SECS=0 POLL_SECS=1 ./runner.sh 2>&1)
+check "runner: a label it can't make STOPs the run, says why, and how to go on without one" \
+    sh -c "echo \"\$1\" | grep -q \"STOP: could not create the PR label 'metaloop:fix' on o/r: HTTP 403.*PR_LABEL=\" && ! echo \"\$1\" | grep -q 'chain started'" _ "$out"
 printf '# Design branch `delta`\n\nMode: design. Deliver: mockup\nPlan signed off: 2026-11-07 by Selftest\n' > "$T/fix/briefs/delta.md"
 printf 'delta\n' > "$T/fix/queue-design.txt"
 ( cd "$T/fix" && QUEUE=queue-design.txt STAGGER_SECS=0 POLL_SECS=1 ./runner.sh > "$T/runner2.out" 2>&1 ) &
@@ -539,7 +565,7 @@ out=$(cd "$T/fix" && QUEUE=queue-unsigned.txt STAGGER_SECS=0 POLL_SECS=1 ./runne
 check "runner: refuses a branch whose brief has no signed-off plan" sh -c "echo \"\$1\" | grep -q 'STOP: zeta.*Plan signed off'" _ "$out"
 check "... and starts nothing" sh -c "! grep -q 'chain started: zeta' '$T/fix/logs/runner.log'"
 
-echo "== live pages: one per chain, kept current from its state, never committed"
+echo "== the session page: one per orchestrator session, a tab per task, kept current from their state, never committed"
 lw="$wtr/lp"; mkdir -p "$lw/.fixloop/state"
 printf '# Fix branch `lp`\n\nTitle: Retry Bills The Right Customer\nPlan signed off: 2026-11-07 by Selftest\n\n## Tasks\n- T1 · A retry bills the current customer · proved by: RetryBillsCurrentCustomer\n' > "$lw/.fixloop/brief.md"
 cp "$lw/.fixloop/brief.md" "$T/fix/briefs/lp.md"
@@ -551,69 +577,96 @@ cat > "$lw/.fixloop/status.json" <<'EOF'
            "options": [{"key": "a", "text": "The customer the order has now"}, {"key": "b", "text": "The customer it was queued for"}],
            "recommend": "a", "at": "2026-11-07T14:20:00", "status": "open"}]}
 EOF
-(cd "$T/fix" && "$PY" live_page.py lp > "$T/lp.out" 2>&1)
-check "live_page writes the page into the run folder as live/lp.live.html" test -f "$T/fix/live/lp.live.html"
-check "... with its settings filled in" sh -c "grep -q 'Retry Bills The Right Customer' '$T/fix/live/lp.live.html' && ! grep -qE '__CONFIG__|__TWO_WAY__' '$T/fix/live/lp.live.html'"
+(cd "$T/fix" && "$PY" live_page.py --title "Billing Fixes" lp > "$T/lp.out" 2>&1)
+check "live_page writes the session's one page into the run folder as live/session.live.html" test -f "$T/fix/live/session.live.html"
+check "... with its settings filled in" sh -c "grep -q 'Billing Fixes' '$T/fix/live/session.live.html' && ! grep -qE '__CONFIG__|__TWO_WAY__' '$T/fix/live/session.live.html'"
+check "... and the chain as its first tab" "$PY" -c "import json,sys; assert json.load(open(sys.argv[1])) == ['lp']" "$T/fix/live/tabs.json"
 check "... and prints the capabilities to publish it with" grep -q '"db"' "$T/lp.out"
-check "... where only the owner writes the answers and approvals relayed to the chain" \
-    sh -c "grep -q '\"path\": \"answers\", \"read\": \"view\", \"write\": \"owner\"' '$T/lp.out' && grep -q '\"path\": \"approvals\", \"read\": \"view\", \"write\": \"owner\"' '$T/lp.out'"
+check "... where only the owner writes, on every collection the page has" "$PY" - "$T/lp.out" <<'EOF'
+import json, sys
+caps = json.loads([l for l in open(sys.argv[1]) if l.startswith("{")][-1])
+rules = {r["path"]: (r["read"], r["write"]) for r in caps["db"]["rules"]}
+want = {"state", "session", "events", "asks", "reviews", "replies", "answers", "approvals"}
+assert set(rules) == want and set(rules.values()) == {("view", "owner")}, rules
+EOF
+check "a chain can't take the verify loop's tab id" sh -c "! (cd '$T/fix' && '$PY' live_page.py verify) >/dev/null 2>&1"
 if [ "$CLONE" = 1 ]; then
     check "the repo ignores *.live.html, so a live page can never be committed" git -C "$REPO" check-ignore -q skills/metaloop/x.live.html
 else
     skip "the MetaLoop repository ignores *.live.html (not a clone of it)"
 fi
-(cd "$T/fix" && "$PY" live_page.py --url lp https://claude.ai/artifact/LP1 >/dev/null)
+check "--url without the URL prints the usage, not a Python error" \
+    sh -c "out=\$(cd '$T/fix' && '$PY' live_page.py --url 2>&1); [ \$? -ne 0 ] && ! echo \"\$out\" | grep -q Traceback"
+(cd "$T/fix" && "$PY" live_page.py --url https://claude.ai/artifact/S1 >/dev/null)
 (cd "$T/fix" && "$PY" live_sync.py lp > "$T/sync1.json" 2>&1)
-check "first sync: the state, both progress lines and the open question" "$PY" - "$T/sync1.json" <<'EOF'
+check "first sync: the run's dashboard entry, the tab's state, both progress lines and the open question" "$PY" - "$T/sync1.json" <<'EOF'
 import json, sys
-page = json.load(open(sys.argv[1]))["pages"][0]
-w = page["writes"]; cols = [x["collection"] for x in w]
-assert page["slug"] == "lp" and page["url"] == "https://claude.ai/artifact/LP1", page
-assert cols.count("state") == 1 and cols.count("events") == 2 and cols.count("asks") == 1, cols
-assert all(x["op"] == "set" and "if_version" not in x for x in w), w   # every write creates a new document
+o = json.load(open(sys.argv[1]))
+w = o["writes"]; cols = [x["collection"] for x in w]
+assert o["url"] == "https://claude.ai/artifact/S1", o
+assert cols.count("session") == 1 and cols.count("state") == 1 and cols.count("events") == 2 and cols.count("asks") == 1, cols
+assert all(x["op"] == "set" and "if_version" not in x for x in w), w
+assert all(x["data"]["tab"] == "lp" for x in w if x["collection"] != "session"), w   # every document names its tab
+ids = {x["collection"]: x["doc_id"] for x in w}
+assert ids["state"] == "lp" and ids["asks"] == "lp~Q1" and ids["events"].startswith("lp~e"), ids
+sess = [x["data"] for x in w if x["collection"] == "session"][0]
+assert sess["label"] == "metaloop:fix" and sess["repo"] == "o/r", sess
+assert sess["labelUrl"] == "https://github.com/o/r/pulls?q=is%3Apr+label%3A%22metaloop%3Afix%22", sess["labelUrl"]
 st = [x for x in w if x["collection"] == "state"][0]["data"]
-assert st["badge"]["tone"] == "warn" and st["tasks"][0]["id"] == "T1", st
+assert st["badge"]["tone"] == "warn" and st["tasks"][0]["id"] == "T1" and "peers" not in st, st
 EOF
 (cd "$T/fix" && "$PY" live_sync.py lp > "$T/sync1b.json" 2>&1)
 check "until --done, the same writes are offered again" cmp -s "$T/sync1.json" "$T/sync1b.json"
 (cd "$T/fix" && "$PY" live_sync.py lp --done >/dev/null && "$PY" live_sync.py lp > "$T/sync2.json" 2>&1)
-check "after --done, an unchanged chain needs no writes" "$PY" -c "import json,sys; o=json.load(open(sys.argv[1])); assert all(not p['writes'] for p in o['pages']), o" "$T/sync2.json"
-check "--url without the URL prints the usage, not a Python error" \
-    sh -c "out=\$(cd '$T/fix' && '$PY' live_page.py --url lq 2>&1); [ \$? -ne 0 ] && ! echo \"\$out\" | grep -q Traceback"
+check "after --done, an unchanged chain needs no writes" "$PY" -c "import json,sys; o=json.load(open(sys.argv[1])); assert not o['writes'], o" "$T/sync2.json"
 printf '# Fix branch `lq`\n\nTitle: A Chain Still In The Queue\nPlan signed off: 2026-11-07 by Selftest\n' > "$T/fix/briefs/lq.md"
-(cd "$T/fix" && "$PY" live_page.py --url lq https://claude.ai/artifact/LQ1 >/dev/null && "$PY" live_sync.py lq lp > "$T/syncq.json" 2>&1)
-check "a chain that hasn't started yet: Queued, and no step done" "$PY" - "$T/syncq.json" <<'EOF'
+(cd "$T/fix" && "$PY" live_page.py lq > "$T/lq.out" 2>&1 && "$PY" live_sync.py --all > "$T/syncq.json" 2>&1)
+check "a tab added later needs no republish: the page is already up" grep -q "nothing to republish" "$T/lq.out"
+check "a chain that hasn't started yet: its own tab, after the first, Queued, and no step done" "$PY" - "$T/syncq.json" <<'EOF'
 import json, sys
-st = [x["data"] for x in json.load(open(sys.argv[1]))["pages"][0]["writes"] if x["collection"] == "state"][0]
-assert st["badge"]["text"] == "Queued" and all(s["state"] == "todo" for s in st["steps"]), st
+w = json.load(open(sys.argv[1]))["writes"]
+assert [x["doc_id"] for x in w if x["collection"] == "state"] == ["lq"], w   # lp is unchanged: nothing sent for it
+st = [x["data"] for x in w if x["collection"] == "state"][0]
+assert st["order"] == 1 and st["badge"]["text"] == "Queued" and all(s["state"] == "todo" for s in st["steps"]), st
 EOF
-check "a page published later shows on the other pages, even one with nothing new" "$PY" - "$T/syncq.json" <<'EOF'
-import json, sys
-w = json.load(open(sys.argv[1]))["pages"][1]["writes"]
-assert [x["collection"] for x in w] == ["state"] and [p["slug"] for p in w[0]["data"]["peers"]] == ["lq"], w
-EOF
-(cd "$T/fix" && "$PY" live_sync.py lq lp --done >/dev/null)
+(cd "$T/fix" && "$PY" live_sync.py --all --done >/dev/null)
 (cd "$lw" && "$PY" "$T/fix/task.py" phase docs "Docs updated: the sync retry section" >/dev/null)
 (cd "$T/fix" && "$PY" live_sync.py lp > "$T/sync3.json" 2>&1)
-check "a new step: one new line and a new state, nothing sent twice" "$PY" -c "import json,sys; w=json.load(open(sys.argv[1]))['pages'][0]['writes']; assert sorted(x['collection'] for x in w)==['events','state'], w" "$T/sync3.json"
+check "a new step: one new line and the tab's state replaced, nothing sent twice" "$PY" - "$T/sync3.json" <<'EOF'
+import json, sys
+w = json.load(open(sys.argv[1]))["writes"]
+assert sorted((x["collection"], x["doc_id"]) for x in w) == [("events", "lp~e000003"), ("state", "lp")], w
+EOF
 (cd "$T/fix" && "$PY" live_sync.py lp --done >/dev/null)
 att=$(cd "$T/fix" && "$PY" live_sync.py --attention 2>&1)
-check "--attention prints the main window's line for the open question, with the link" \
-    sh -c "echo \"\$1\" | grep -q 'Needs you · lp: Which Customer A Retry Bills → https://claude.ai/artifact/LP1'" _ "$att"
+check "--attention prints the main window's line for the open question, with the page's link" \
+    sh -c "echo \"\$1\" | grep -q 'Needs you · lp: Which Customer A Retry Bills → https://claude.ai/artifact/S1'" _ "$att"
 (cd "$lw" && "$PY" "$T/fix/task.py" review "CodeRabbit #101: a deleted order crashes the retry, Retry.cs:40" "Skip the retry and log it" >/dev/null)
 (cd "$T/fix" && "$PY" live_sync.py lp > "$T/sync4.json" 2>&1)
-check "a review item waits for the main session's recommendation" "$PY" -c "import json,sys; w=json.load(open(sys.argv[1]))['pages'][0]['writes']; assert not [x for x in w if x['collection']=='reviews'], w" "$T/sync4.json"
+check "a review item waits for the main session's recommendation" "$PY" -c "import json,sys; w=json.load(open(sys.argv[1]))['writes']; assert not [x for x in w if x['collection']=='reviews'], w" "$T/sync4.json"
 echo '{"1": "Apply"}' > "$T/fix/live/lp.recs.json"
 (cd "$T/fix" && "$PY" live_sync.py lp > "$T/sync5.json" 2>&1)
-check "... and goes up with it" "$PY" -c "import json,sys; r=[x for x in json.load(open(sys.argv[1]))['pages'][0]['writes'] if x['collection']=='reviews']; assert len(r)==1 and r[0]['data']['rec']=='Apply', r" "$T/sync5.json"
+check "... and goes up with it, keyed by its tab" "$PY" -c "import json,sys; r=[x for x in json.load(open(sys.argv[1]))['writes'] if x['collection']=='reviews']; assert len(r)==1 and r[0]['doc_id']=='lp~r1' and r[0]['data']['rec']=='Apply', r" "$T/sync5.json"
+check "an unknown tab is refused, saying how to add it" sh -c "out=\$(cd '$T/fix' && '$PY' live_sync.py nosuch 2>&1); [ \$? -ne 0 ] && echo \"\$out\" | grep -q 'live_page.py nosuch'"
 mkdir -p "$T/fix/retired/lr"   # what retire.sh keeps of a merged chain once its worktree is gone
 echo '{"slug":"lr","status":"done","phase":"ci","pr":{"number":7,"url":"https://github.com/o/r/pull/7"},"summary":"merged","notes":["2026-11-07T15:00:00 [ci] CI passed"],"reviews":[]}' > "$T/fix/retired/lr/status.json"
-(cd "$T/fix" && "$PY" live_sync.py lr > "$T/syncr.json" 2>/dev/null)
-check "after its worktree is retired, a chain's page keeps its state: Done, with its PR" "$PY" - "$T/syncr.json" <<'EOF'
+(cd "$T/fix" && "$PY" live_page.py lr >/dev/null && "$PY" live_sync.py lr > "$T/syncr.json" 2>/dev/null)
+check "after its worktree is retired, a chain's tab keeps its state: Done, merged, with its PR" "$PY" - "$T/syncr.json" <<'EOF'
 import json, sys
-st = [x["data"] for x in json.load(open(sys.argv[1]))["pages"][0]["writes"] if x["collection"] == "state"][0]
-assert st["badge"]["text"] == "Done" and st["pr"]["number"] == 7, st
+st = [x["data"] for x in json.load(open(sys.argv[1]))["writes"] if x["collection"] == "state"][0]
+assert st["badge"]["text"] == "Done" and st["merged"] is True and st["pr"]["number"] == 7, st
 EOF
+(cd "$T/fix" && "$PY" live_sync.py --all --done >/dev/null)
+init fix "$T/fix" PR_LABEL=
+(cd "$T/fix" && "$PY" live_sync.py --all > "$T/syncnl.json" 2>&1)
+check "PR_LABEL= turns the label off: the runbook opens PRs without one, and the dashboard shows none" "$PY" - "$T/syncnl.json" "$T/fix/runbook.md" <<'EOF'
+import json, sys
+s = [x["data"] for x in json.load(open(sys.argv[1]))["writes"] if x["collection"] == "session"][0]
+assert s["label"] == "" and s["labelUrl"] == "", s
+assert "--label" not in open(sys.argv[2]).read()
+EOF
+(cd "$T/fix" && "$PY" live_sync.py --all --done >/dev/null)
+init fix "$T/fix" PR_LABEL=metaloop:fix
 
 echo "== wait_chain: wakes for a question as well as a chain end, and for progress to sync"
 n0=$(wc -l < "$T/fix/logs/runner.log")
@@ -812,16 +865,23 @@ check "a test with no requirement stays todo" test "$(st T2 status)" = todo
 (cd "$T/ver" && "$PY" init_ledger.py "Selftest" --force >/dev/null && "$PY" ledger.py requires-check "payments" >/dev/null)
 check "a met requirement leaves the test todo" test "$(st T1 status)" = todo
 (cd "$T/ver" && "$PY" ledger.py needs T2 "Turn on the sandbox test card for the test account" >/dev/null)
-(cd "$T/ver" && "$PY" live_page.py verify >/dev/null 2>&1 && "$PY" live_page.py --url verify https://claude.ai/artifact/V1 >/dev/null \
+# the same orchestrator session's verify run joins the fix run's page: its tab is added, nothing is published again
+(cd "$T/ver" && "$PY" live_page.py verify >/dev/null 2>&1 && "$PY" live_page.py --url https://claude.ai/artifact/S1 >/dev/null \
     && "$PY" live_sync.py verify > "$T/vsync.json" 2>&1)
-check "verify: its live page gets the ledger's counts and the blocked test's ask" "$PY" - "$T/vsync.json" <<'EOF'
+check "verify: its tab on the session's page gets the ledger's counts and the blocked test's ask" "$PY" - "$T/vsync.json" <<'EOF'
 import json, sys
-w = json.load(open(sys.argv[1]))["pages"][0]["writes"]
-st = [x["data"] for x in w if x["collection"] == "state"][0]
-asks = [x["data"] for x in w if x["collection"] == "asks"]
-assert st["counts"]["blocked"] == 1 and st["counts"]["todo"] >= 2, st
-assert [a["kind"] for a in asks] == ["needs"] and "sandbox" in asks[0]["question"], asks
+o = json.load(open(sys.argv[1])); w = o["writes"]
+assert o["url"] == "https://claude.ai/artifact/S1", o
+st = [x for x in w if x["collection"] == "state"][0]
+asks = [x for x in w if x["collection"] == "asks"]
+sess = [x["data"] for x in w if x["collection"] == "session"][0]
+assert st["doc_id"] == "verify" and st["data"]["order"] == -1, st          # the verify tab comes first
+assert st["data"]["counts"]["blocked"] == 1 and st["data"]["counts"]["todo"] >= 2, st
+assert [a["data"]["kind"] for a in asks] == ["needs"] and asks[0]["doc_id"].startswith("verify~T2@"), asks
+assert "sandbox" in asks[0]["data"]["question"], asks
+assert sess["run"] == "ver" and sess["kind"] == "verify" and sess["label"] == "", sess   # a verify run opens no PRs
 EOF
+check "a verify run folder has the one tab" sh -c "! (cd '$T/ver' && '$PY' live_page.py lp) >/dev/null 2>&1"
 cat > "$T/ver/ledger.json" <<'EOF'
 {"tests": [{"id": "T1", "title": "Bill A Card", "status": "awaiting_human", "started": "2026-11-07T15:00:00", "ask": "Sign in to the accounting sandbox"}], "sessions": []}
 EOF
@@ -830,7 +890,7 @@ EOF
 (cd "$T/ver" && "$PY" live_sync.py verify > "$T/vsync2.json" 2>&1)
 check "verify: once the sign-in is done, its card leaves the page" "$PY" - "$T/vsync2.json" <<'EOF'
 import json, sys
-st = [x["data"] for x in json.load(open(sys.argv[1]))["pages"][0]["writes"] if x["collection"] == "state"][0]
+st = [x["data"] for x in json.load(open(sys.argv[1]))["writes"] if x["collection"] == "state"][0]
 assert [k for k in st["answered"] if "@signin@" in k], st
 EOF
 mkdir -p "$T/ver/logs"; echo "[11-07 15:10:00] T2 started" >> "$T/ver/logs/loop.log"; v0=$(wc -l < "$T/ver/logs/loop.log")
@@ -972,7 +1032,7 @@ retire --apply
 check "retire: a merged PR's worktree is removed" test ! -e "$R/r1-wt/merged"
 check "retire: ... its local branch deleted" sh -c "! git -C '$R/repo' rev-parse -q --verify refs/heads/ai-work/merged"
 check "retire: ... and its state kept in retired/" test -f "$R/r1/retired/merged/status.json"
-check "retire: ... with its brief and sessions, so its live page keeps its title and cost" \
+check "retire: ... with its brief and sessions, so its tab keeps its title and cost" \
     sh -c "[ -f '$R/r1/retired/merged/brief.md' ] && [ -f '$R/r1/retired/merged/state/sessions.txt' ]"
 check "retire: a closed PR's worktree is removed" test ! -e "$R/r1-wt/closed"
 check "retire: an open PR's worktree is kept" test -d "$R/r1-wt/open"
