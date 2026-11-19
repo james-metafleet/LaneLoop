@@ -404,10 +404,12 @@ with auto-update on receive a merged change at their next session, and everyone 
   `laneloop@<version>` ([publish-npm.yml](.github/workflows/publish-npm.yml)). The workflow stamps the version into
   `package.json` and `plugin.json` in its own checkout only (`scripts/npm-release.mjs`), so `main` keeps versioning the
   GitHub install by commit; an npm copy with no version would read as `unknown` and never update. `npm publish` refuses
-  a copy that wasn't stamped. It authenticates with npm trusted publishing, so no token is stored. Set this up once:
-  publish the first release by hand (`npm login`, `node scripts/npm-release.mjs 0.1.0`, `npm publish`, then
-  `git checkout -- package.json .claude-plugin/plugin.json`), then on npmjs.com, in the package's settings, add the
-  trusted publisher: GitHub Actions, `jomitiron/LaneLoop`, workflow `publish-npm.yml`.
+  a copy that wasn't stamped. It authenticates with npm trusted publishing, so no token is stored: on npmjs.com, in the
+  package's settings, the trusted publisher is GitHub Actions, `jomitiron/LaneLoop`, workflow `publish-npm.yml`.
+  Version 0.1.0 was published by hand; the next release tag is `v0.1.1` or later, since npm never accepts a version twice.
+  To publish by hand: the npm account needs two-factor authentication for writes; then `npm login`,
+  `node scripts/npm-release.mjs <version>`, `npm publish --provenance=false` (provenance can only be signed inside
+  GitHub Actions), approve it in the browser, then `git checkout -- package.json .claude-plugin/plugin.json`.
 - **Numbered releases for everyone.** To hold GitHub installs on numbered releases too, add `"version": "1.0.0"` to
   `.claude-plugin/plugin.json` on `main` and raise it for each release (`claude plugin tag --push` tags it). Users then
   receive nothing new until the version changes.
