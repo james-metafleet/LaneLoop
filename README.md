@@ -15,6 +15,7 @@ Gemini, planning on Codex, coding on Claude, or any mix you choose.
 - [Supported Stacks and Services](#supported-stacks-and-services)
 - [Repository Layout](#repository-layout)
 - [Development](#development)
+- [License](#license)
 
 ## Key Features
 
@@ -350,6 +351,7 @@ agent can load through `install.sh`.
 | [install.sh](install.sh) | Installs the skill for Codex, Antigravity, Gemini CLI, Grok Build, OpenCode or Cursor. |
 | [evals/](evals/) | Behaviour evals for the skill (`claude plugin eval .`). |
 | [.github/workflows/check.yml](.github/workflows/check.yml) | Validates the plugin and runs the kit's self-test on every pull request. |
+| [LICENSE](LICENSE), [NOTICE](NOTICE) | The Apache License 2.0, and the copyright and attribution notices that go with it. |
 
 ## Development
 
@@ -388,3 +390,13 @@ The self-test renders a fix run and a verify run in a temporary folder from a te
 stand-ins (a stub toolchain and a stub service), every test-output parser against sample output, and every stack
 preset. Where PostgreSQL or MongoDB is installed, it also starts the native presets for real. Nothing outside the
 temporary folder is touched.
+
+## License
+
+MetaLoop is licensed under the [Apache License, Version 2.0](LICENSE). You may use, change and redistribute it,
+commercially or not, provided you keep the license and the [NOTICE](NOTICE) file with it and mark the files you change.
+The license grants no rights to the MetaLoop name.
+
+The fan-out readiness reviewer and its standard (`skills/metaloop/kit/fix/fanout_readiness.md` and
+`fanout-readiness-standard.md`) are adapted from Google's [Elephant-Goldfish Model](https://github.com/google/elephant-goldfish-model),
+also licensed under Apache 2.0; [NOTICE](NOTICE) lists what was taken.

@@ -1,0 +1,15 @@
+MetaLoop
+Copyright 2026 James Omitiran
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes material adapted from the Elephant-Goldfish Model (EGM)
+(https://github.com/google/elephant-goldfish-model), licensed under the Apache
+License, Version 2.0. The adapted files, each marked as changed, are:
+
+  skills/metaloop/kit/fix/fanout_readiness.md
+      the Goldfish reviewer format and its "Core Mandates (Universal Goldfish
+      Context)" section, from EGM's agents/*.md
+  skills/metaloop/kit/fix/fanout-readiness-standard.md
+      the document standard format, from EGM's
+      resources/document_standards/implementation-readiness-standard.md
