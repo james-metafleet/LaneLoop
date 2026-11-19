@@ -1,13 +1,13 @@
 {
-  "name": "metaloop",
-  "displayName": "MetaLoop",
+  "name": "laneloop",
+  "displayName": "LaneLoop",
   "description": "Run large engineering work as unattended coding-agent loops with owner gates: plan with Google's EGM, fan out parallel fix chains in git worktrees, live-verify the app end to end, and keep every session inside its context window. Mix agents and models per role (research, plan, code, verify) across Claude Code, Codex, Antigravity, Gemini CLI, Grok Build, OpenCode and Cursor. Any language, framework or database.",
   "author": {
     "name": "jomitiron",
     "url": "https://github.com/jomitiron"
   },
-  "homepage": "https://github.com/jomitiron/MetaLoop",
-  "repository": "https://github.com/jomitiron/MetaLoop",
+  "homepage": "https://github.com/jomitiron/LaneLoop",
+  "repository": "https://github.com/jomitiron/LaneLoop",
   "license": "Apache-2.0",
   "keywords": ["orchestration", "parallel", "worktrees", "spec", "egm", "verification", "context-window", "multi-agent", "codex", "gemini", "grok"]
 }
