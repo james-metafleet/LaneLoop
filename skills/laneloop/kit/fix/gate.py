@@ -16,9 +16,13 @@ the env of the services it names. Verdict rules:
   not counted, not re-run alone.
 - loop.json GATE_SKIP names steps left out on this machine, only on the owner's explicit decision (doctor.py says when
   one is needed); the verdict names them, with the step's "skippable" note (what checks it instead, e.g. a CI job).
-Concurrency across branches: a step with "slots": N runs at most N at once across every chain of the run (a step that
-uses services gets 1 unless it says). Each slot gets its own instance of the step's services, on port + slot, removed
-after (services.py).
+Concurrency: a step with "slots": N runs at most N at once on this machine, counting every run and every project on it
+(a step that uses services gets 1 unless it says). The slots are one folder for the machine (loop.json GATE_SLOTS,
+default ~/.laneloop/gate-slots), shared by step name. A gate takes only slots below its own profile's N: when two
+profiles give a step different counts, the larger one caps the machine and the smaller still waits for one of its N.
+A gate over the limit waits, and --status (and gate.json "waiting") says for which slot and behind whom. Each instance of
+a step's services gets a port no other gate on the machine holds (its port + the lowest free offset), and is removed
+after (services.py). A slot or port whose gate died is freed for the next gate.
 """
 import json, os, re, subprocess, sys, time
 
@@ -30,11 +34,13 @@ from services import Service, ServiceError, BASH  # noqa: E402
 ROOT = os.getcwd()
 RUN = os.path.join(ROOT, ".fixloop")
 STATE = os.path.join(RUN, "gate.json")
-LOCKS = os.path.join(HERE, "locks")
 try:
     CONF = json.load(open(os.path.join(HERE, "loop.json"), encoding="utf8"))
 except (OSError, ValueError):
     CONF = {}
+LOCKS = os.path.expanduser(CONF.get("GATE_SLOTS") or "~/.laneloop/gate-slots")   # one set for the machine, every run
+WHO = f"{CONF['RUN_NAME']}/{os.path.basename(ROOT)}" if CONF.get("RUN_NAME") else os.path.basename(ROOT)
+POLL = int(os.environ.get("GATE_POLL_SECS", "20"))
 PROJECT = project.load()
 KNOWN = [k.strip() for k in CONF.get("KNOWN_FLAKES", "").split(",") if k.strip()]
 PLATFORM_FAILS = [k.strip() for k in CONF.get("KNOWN_PLATFORM_FAILURES", "").split(",") if k.strip()]
@@ -83,23 +89,63 @@ def pid_alive(pid):
     return str(pid) in out
 
 
-def acquire(kind, n):
-    os.makedirs(LOCKS, exist_ok=True)
-    while True:
-        for i in range(n):
-            p = os.path.join(LOCKS, f"{kind}-{i}")
+def take(p):
+    """Make the lock folder p ours: None once it is, else who holds it (run/worktree). A dead gate's is freed and taken."""
+    for _ in range(2):
+        try:
+            os.mkdir(p)
+        except FileExistsError:
             try:
-                os.mkdir(p)
-                open(os.path.join(p, "owner"), "w").write(f"{os.getpid()} {ROOT}")
+                lines = open(os.path.join(p, "owner"), encoding="utf8").read().splitlines()
+                pid = int(lines[0].split()[0])
+            except (OSError, ValueError, IndexError):
+                lines, pid = [], 0
+            who = lines[1] if len(lines) > 1 else "a gate starting up"
+            try:  # no owner line yet: a gate between its mkdir and its write, unless that was a minute ago
+                young = not pid and time.time() - os.path.getmtime(p) < 60
+            except OSError:
+                young = False  # released meanwhile
+            if pid_alive(pid) or young:
+                return who
+            release(p)  # stale: its gate died
+            continue
+        open(os.path.join(p, "owner"), "w", encoding="utf8").write(f"{os.getpid()} {ROOT}\n{WHO}\n")
+        return None
+    return "a gate taking it at the same moment"
+
+
+def acquire(name, n, s):
+    """One of the step's n slots, shared by every gate on the machine; while all are held, gate.json says what it waits for."""
+    os.makedirs(LOCKS, exist_ok=True)
+    key = re.sub(r"[^\w.-]", "_", name)
+    since = None
+    while True:
+        holders = []
+        for i in range(n):
+            p = os.path.join(LOCKS, f"step-{key}-{i}")
+            who = take(p)
+            if who is None:
+                if since:
+                    s.pop("waiting", None); save(s)
                 return p, i
-            except FileExistsError:
-                try:
-                    owner = int(open(os.path.join(p, "owner")).read().split()[0])
-                except (OSError, ValueError, IndexError):
-                    owner = 0
-                if not pid_alive(owner):  # stale slot from a dead gate
-                    release(p)
-        time.sleep(20)
+            holders.append(who)
+        since = since or time.strftime("%Y-%m-%dT%H:%M:%S")
+        slot = f"{'an' if name[:1].lower() in 'aeiou' else 'a'} {name} slot"
+        w = {"step": name, "slot": slot, "behind": holders, "since": since,
+             "text": f"waiting for {slot}, behind {', '.join(holders)} (since {since[11:16]})"}
+        if s.get("waiting") != w:
+            s["waiting"] = w; save(s)
+        time.sleep(POLL)
+
+
+def port_offset(base):
+    """The lowest offset whose port (base + offset) no other gate on the machine holds, with that port's lock."""
+    os.makedirs(LOCKS, exist_ok=True)
+    for k in range(100):
+        p = os.path.join(LOCKS, f"port-{base + k}")
+        if take(p) is None:
+            return k, p
+    raise GateError(f"every port from {base} to {base + 99} is held by another gate")
 
 
 def release(p):
@@ -117,12 +163,17 @@ def run_step(cmd, log, env):
 
 
 def with_services(names, slot, fn):
-    """Start each named service for this slot, run fn(env) with their env, and stop them, whatever happens."""
-    started, env = [], {}
+    """Start each named service on a port no other gate holds, run fn(env) with their env, and stop them, whatever happens.
+    The port's offset is the machine's, not the step's slot: two steps (or projects) may name services on one port."""
+    started, env, ports = [], {}, []
     try:
         for n in names:
             spec = project.service_spec(PROJECT, n)
-            s = Service(n, spec, slot=slot, state=os.path.join(RUN, "state"), logs=os.path.join(RUN, "logs"), run=HERE, root=ROOT)
+            k = slot
+            if spec.get("port"):
+                k, p = port_offset(int(spec["port"]))
+                ports.append(p)
+            s = Service(n, spec, slot=k, state=os.path.join(RUN, "state"), logs=os.path.join(RUN, "logs"), run=HERE, root=ROOT)
             started.append(s)
             env.update(s.start())
         return fn(env)
@@ -131,6 +182,8 @@ def with_services(names, slot, fn):
     finally:
         for s in reversed(started):
             s.stop()
+        for p in ports:
+            release(p)
 
 
 def judge(step, r, log, rc):
@@ -172,7 +225,7 @@ def run():
         log = os.path.join(RUN, "logs", f"gate-{name}.log")
         svcs = step.get("services") or []
         slots = int(step.get("slots") or (1 if svcs else 0))
-        lock, slot = acquire(name, slots) if slots else (None, 0)
+        lock, slot = acquire(name, slots, s) if slots else (None, 0)
         env = dict(base_env, **{k: str(v) for k, v in (step.get("env") or {}).items()})
         t0, r = time.time(), {}
         try:
@@ -209,7 +262,8 @@ def status():
         print("no gate run yet"); return
     if s["verdict"] == "running":
         alive = pid_alive(s.get("pid"))
-        print(f"running since {s['started']}: step {s['step']}" + ("" if alive else " (process gone: restart with --start)"))
+        print(f"running since {s['started']}: step {s['step']}" + ("" if alive else " (process gone: restart with --start)") +
+              (f" · {s['waiting']['text']}" if alive and s.get("waiting") else ""))
         return
     skipped = s.get("skipped") or []
     print(f"gate {s['verdict'].upper()} ({s['started']}-{s.get('finished')})" +
@@ -260,5 +314,6 @@ def start():
 
 
 if __name__ == "__main__":
+    sys.stdout.reconfigure(encoding="utf-8")   # redirected on Windows, stdout is cp1252: its "·" breaks a UTF-8 grep
     arg = sys.argv[1] if len(sys.argv) > 1 else "--status"
     {"--start": start, "--status": status, "--run": run}.get(arg, status)()

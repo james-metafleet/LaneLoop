@@ -145,6 +145,8 @@ DEFAULTS = {
     # gate: steps NOT run on this machine (names from project.json gate.steps), only ever on the owner's explicit decision
     # (doctor.py says when one is needed); the verdict and every PR body name them, with the step's "skippable" note
     "GATE_SKIP": "",
+    # gate: the lock slots every run on this machine shares, of every project (each step's "slots" caps it machine-wide)
+    "GATE_SLOTS": fwd(os.path.expanduser("~/.laneloop/gate-slots")),
     # the project profile: how this project builds, tests and serves (relative to the repo, or absolute)
     "PROJECT": ".laneloop/project.json",
     # where design chains put mockups and schema-change pages, each folder with a README registry of its pages
@@ -320,7 +322,7 @@ def main(a):
                 shutil.copy(p, os.path.join(run, name))
     if prof:
         write(os.path.join(run, "project.json"), prof_text)  # the repo's file as it is
-    for d in ("logs", "state", "handoffs", "live") + (("briefs", "replies", "locks") if kind == "fix" else ("tests", "guide", "evidence")):
+    for d in ("logs", "state", "handoffs", "live") + (("briefs", "replies") if kind == "fix" else ("tests", "guide", "evidence")):
         os.makedirs(os.path.join(run, d), exist_ok=True)
     with open(os.path.join(run, "loop.conf"), "w", encoding="utf-8", newline="\n") as f:
         f.write("# Written by init_run.py; sourced by the loop scripts. Edit here or re-run init_run.py with KEY=VALUE "

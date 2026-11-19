@@ -856,7 +856,7 @@ check "a profile with no gate steps fails the gate and says so" sh -c "echo \"\$
 init fix "$T/fix" PROJECT="$T/project.json"
 
 echo "== gate slots: one set for the machine, shared by every run and every project on it"
-check "by default the slots are one folder for the machine, outside every run (~/.laneloop/gate-slots)" "$PY" -c \
+check "by default the slots are one folder for the machine, outside every run (~/.laneloop/gate-slots)" "$PY" -B -c \
     "import sys; sys.path.insert(0, sys.argv[1]); import init_run as i; assert i.DEFAULTS['GATE_SLOTS'].endswith('/.laneloop/gate-slots'), i.DEFAULTS.get('GATE_SLOTS')" "$KIT"
 # Four runs, each its own project profile, one worktree each (x). p1 and p2: an integration suite with one slot on the
 # stand-in service, p1's slow enough for the others to start meanwhile; p3: the same step given two slots; p4: another
@@ -909,7 +909,7 @@ check "once the slot is free the waiting gate runs, and every gate of the four r
 check "... with no wait left in its gate.json" "$PY" -c "import json,sys; assert 'waiting' not in json.load(open(sys.argv[1]))" "$T/p2-wt/x/.fixloop/gate.json"
 check "the slots are in the one folder, not in any run's" sh -c "[ -d '$T/slots' ] && ! ls -d '$T'/p[1-4]/locks 2>/dev/null | grep -q ."
 # a gate that dies holding a slot: the next gate, from another run, takes it
-write_profile "$T/pk.json" "p['gate']['steps'] = [dict(p['gate']['steps'][1], run='sleep 60; st-run test unit', slots=1)]"
+write_profile "$T/pk.json" "p['gate']['steps'] = [dict(p['gate']['steps'][1], run='sleep 20; st-run test unit', slots=1)]"
 write_profile "$T/pk2.json" "p['gate']['steps'] = [dict(p['gate']['steps'][1], slots=1)]"
 for r in p5:pk p6:pk2; do
     init fix "$T/${r%%:*}" PROJECT="$T/${r#*:}.json"; mkdir -p "$T/${r%%:*}-wt/x/.fixloop"
@@ -921,6 +921,8 @@ bash -c "source '$T/fix/platform.sh' && kill_tree $gpid"
 gstart p6; gdone p6 60
 check "a slot whose gate died is freed for the next gate, whichever run it is in ($(gs p6 | head -1))" \
     sh -c "cd '$T/p6-wt/x' && '$PY' '$T/p6/gate.py' --status | grep -q '^gate PASS'"
+# on Windows the dead gate's step outlives it with its log open: wait for it, so the temp folder can be removed
+wait_for 40 rm -f "$T/p5-wt/x/.fixloop/logs/gate-unit.log"
 
 echo "== verify ledger: Requires: lines"
 printf '# T1 · Takes A Card Payment\nRequires: payments\n' > "$T/ver/tests/T1.md"
