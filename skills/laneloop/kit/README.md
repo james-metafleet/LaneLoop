@@ -87,6 +87,7 @@ Machine fallbacks (doctor.py says when each applies):
 | `PROJECT` | `.laneloop/project.json` | The project profile (relative to the repo, or absolute). |
 | `PR_LABEL` | `laneloop:<run name>` | The label on every pull request the run opens (at most 50 characters); the session page links all of them. Empty: no label. |
 | `GATE_SKIP` | empty | **The owner's decision only:** gate steps (by name) left out on this machine, e.g. one whose service this machine can't run; CI runs it instead. The gate's verdict and every PR body name it. |
+| `GATE_SLOTS` | `~/.laneloop/gate-slots` | The gate's slots and service ports: one folder for the machine, shared by every run of every project, so a step's `slots` count caps it machine-wide. |
 | `START_SERVER` | `1` | `0`: the verify loop tests an app already running on `APP_URL` (the profile's `verify.url`). |
 | `KNOWN_FLAKES` | empty | Tests that fail only under shared load: reported, not counted; each must pass when run alone. |
 | `KNOWN_PLATFORM_FAILURES` | empty | Tests that fail on this platform every time and pass on CI: reported, not counted, never re-run alone. |
@@ -138,7 +139,7 @@ Machine fallbacks (doctor.py says when each applies):
 | `make_briefs.py` | `briefs/<slug>.md` (with the branch's title, tasks, a `Plan signed off:` line and its `Size cap:`) and a queue file, from a signed-off plan only. The runner starts no branch whose brief lacks that line. |
 | `pr_size.py` | A pull request's size: `count` measures a branch (added plus removed lines, tests included; lockfiles, generated files and signed-off pages left out) against its cap, `plan` lists every branch's estimate against `PR_MAX_LINES`. `sign_plan.py`, `egm_plan.py check` and `task.py` use it. |
 | `start.sh <queue> [MAX_PAR]`, `runner.sh`, `fixloop.sh` | Run a queue of chains in parallel; one chain of sessions per branch. The runner makes the run's PR label (`PR_LABEL`) before the first chain starts, and stops if it can't. |
-| `task.py`, `gate.py` | A branch's state (`task.py pin`: the plan or code pin its next session runs on; `ask` / `answer`: a question for the owner that doesn't stop the chain, and the answer from its tab of the session page; `done`: a task ticked; `size`: the branch against its PR size cap, which the pr phase and `ready` enforce; `cap`: a cap the owner raised mid-run); the pre-PR gate (the profile's gate steps, detached, slot-limited, each slot with its own services). |
+| `task.py`, `gate.py` | A branch's state (`task.py pin`: the plan or code pin its next session runs on; `ask` / `answer`: a question for the owner that doesn't stop the chain, and the answer from its tab of the session page; `done`: a task ticked; `size`: the branch against its PR size cap, which the pr phase and `ready` enforce; `cap`: a cap the owner raised mid-run); the pre-PR gate (the profile's gate steps, detached, slot-limited by slots every run on the machine shares, each slot with its own services; `--status` names the slot a gate waits for and who holds it). |
 | `pr_read.py <PR> comments\|reviews\|issue` | The chains' only way to read PR comments: GET only (chains may not call `gh api`). |
 | `runbook.md`, `settings.json`, `end_gate.py` | What every chain session is told and allowed; its stop hook. |
 | `status.py [queue]` | Every branch's state, phase, PR and last note. |

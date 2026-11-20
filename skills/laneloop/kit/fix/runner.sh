@@ -14,7 +14,7 @@ MAX_PAR="${_max_par:-$MAX_PAR}"   # the caller's MAX_PAR wins over loop.conf
 QUEUE="${QUEUE:-queue.txt}"
 STAGGER_SECS="${STAGGER_SECS:-45}"   # between chain starts: staggers worktree creation and first builds
 POLL_SECS="${POLL_SECS:-30}"
-mkdir -p logs locks
+mkdir -p logs
 log() { echo "[$(date '+%m-%d %H:%M:%S')] [runner] $*" | tee -a logs/runner.log; }
 notify() { platform_notify "$1" "$2"; }
 

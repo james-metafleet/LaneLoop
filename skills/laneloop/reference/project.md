@@ -109,15 +109,15 @@ unless the step says `"continue": true`. A step with `tests` is judged by its ou
 
 A parsed step fails when no summary line is found, when zero tests ran, when it exits non-zero with no failing test (a
 crash before the tests), or when more tests failed than `KNOWN_FLAKES` names matched. `KNOWN_PLATFORM_FAILURES` are
-reported and not counted. `slots` caps how many chains run the step at once; a step that uses services gets 1 unless it
-says, and each slot has its own service instances. `GATE_SKIP=<step>` (the owner's decision only) leaves a step out; the
+reported and not counted. `slots` caps how many gates run the step at once on the machine, every run and project counted; a
+step that uses services gets 1 unless it says, and each slot has its own service instances. `GATE_SKIP=<step>` (the owner's decision only) leaves a step out; the
 verdict and the PR body name it with its `skippable` note. `hints` print a line when a failed step's log matches.
 
 ## Services
 
 | Field | What |
 |---|---|
-| `port` | The base port; a gate slot adds its number. A port already in use is an error, never shared. |
+| `port` | The base port; the gate adds the lowest offset no other gate on the machine holds. A port already in use by another program is an error, never shared. |
 | `start` | Left running in the background (its output in `logs/service-<name>.log`). Exiting non-zero fails at once with the log's tail; exiting 0 (a daemon that backgrounds itself) is waited on. |
 | `up`, `init`, `ready` | Checks and one-off set-up: wait for `up` (default `ready`), run `init` once, wait for `ready`. Each is a command that exits 0 when true. |
 | `stop` | Run on the way out (e.g. `docker rm -f`); whatever `start` left running is then ended. |

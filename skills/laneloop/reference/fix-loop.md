@@ -14,7 +14,7 @@ sign-off), on whichever agent that pin names: `agent_run.py` starts it ([crew.md
 | `task.py` | The branch's state (`.fixloop/status.json`): phase, notes, PR, review proposals, questions for the owner, tasks done, final state. Sessions change state only through it. |
 | `live_page.py`, `live_sync.py` | The branch's tab on the orchestrator session's one live page (`live/session.live.html`, never committed) and the writes that keep it current from `status.json`. The main session publishes and syncs it; chains never touch it. |
 | `pr_size.py` | The branch's pull request size against its cap (`PR_MAX_LINES`, 400 by default): added plus removed lines, tests included, lockfiles, generated files and signed-off pages left out. `task.py size` runs it; `task.py` refuses the pr phase and `ready` over the cap. |
-| `gate.py` | The pre-PR gate: every step the project profile names (builds, linters, test suites), detached, with lock slots per step, and each slot's own instances of the services a step needs. A suite fails on more failures than known-flake names matched, named or not, and on zero tests run. |
+| `gate.py` | The pre-PR gate: every step the project profile names (builds, linters, test suites), detached, with lock slots per step shared by every run on the machine (`--status` says which slot a gate waits for, behind whom), and each slot's own instances of the services a step needs. A suite fails on more failures than known-flake names matched, named or not, and on zero tests run. |
 | `runbook.md` | Appended to every session's system prompt: the standing overrides, the phases, each mode's rules, the hand-off format. |
 | `settings.json` | Permissions (allow and deny lists) and the hooks: `ctx_guard.py` after every tool call, `end_gate.py` on stop. |
 
@@ -86,9 +86,15 @@ approval) and the owner merging. Never give a chain's account more rights than t
 - On Windows, child processes start with `CREATE_NO_WINDOW`: without it every child of the gate opens a console window.
   Elsewhere the gate runs in a session of its own. The profile's `env` reaches every step (pin a locale there if the
   project's tests format dates or numbers).
-- Services: a step that names services gets, per slot, its own fresh instance of each (a database, a cache, a queue) on
-  its port + slot, removed after: two chains never share one, so suites with fixed database names can't clobber each
-  other. Docker or native, as the profile says.
+- Slots: a step's `slots` count caps it on the whole machine, across every run and every project (one folder,
+  `GATE_SLOTS`, default `~/.laneloop/gate-slots`, by step name). A gate takes only slots below its own profile's count,
+  so when two profiles give a step different counts the larger caps the machine and the smaller still waits for one of
+  its own. While a gate waits, `gate.py --status`, its `gate.json` ("waiting") and the chain's tab say for which slot,
+  behind which run and worktree, and since when. A slot whose gate died is freed for the next one.
+- Services: a step that names services gets its own fresh instance of each (a database, a cache, a queue) on its port
+  plus the lowest offset no other gate on the machine holds, removed after: two chains never share one, even from two
+  runs, or two steps or projects that name the same port, so suites with fixed database names can't clobber each other.
+  Docker or native, as the profile says.
 - `GATE_SKIP` leaves a step out on a machine that can't run it, only on the owner's decision (e.g. a step whose service
   this machine can't run). The chain then waits for the CI check that runs it before `ready`; the verdict line names it
   and the PR body says so, with the step's `skippable` note.

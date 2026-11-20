@@ -122,6 +122,9 @@ def chain(slug, recs=None):
              "done": "Done.", "awaiting_owner": f"Ready for you: {summary}"}.get(st)
     if st == "in_progress" and not waiting:
         quiet = f"Nothing needs you. Next: {nxt}." if nxt else "Nothing needs you."
+    gw = (jload(os.path.join(fl, "gate.json"), {}) if d.get("phase") == "gate" else {}).get("waiting")  # gate.py's wait
+    if st == "in_progress" and not waiting and gw:
+        quiet = f"Nothing needs you. The full test run is {gw['text']}."
     done = set(d.get("tasks_done", []))
     tasks = [{"id": t, "text": x, "test": p, "done": t in done}
              for t, x, p in re.findall(r"^- (T\d+) · (.+?) · proved by: (.+)$", brief, re.M)]

@@ -12,7 +12,7 @@ limit=$(( ${WAIT_HOURS:-3} * 3600 )); waited=0; slept=0   # a full gate takes 20
 until "$PYTHON" "$HERE/gate.py" --status 2>&1 | grep -aqiE "^gate (PASS|FAIL)|process gone|no gate run|did not start"; do
     if [ "$waited" -ge "$limit" ]; then
         echo "TIMEOUT after ${WAIT_HOURS:-3}h, gate still running. Status, slot owners and the last log lines:"
-        "$PYTHON" "$HERE/gate.py" --status; ls "$HERE/locks" 2>/dev/null; cat "$HERE"/locks/*/owner 2>/dev/null
+        "$PYTHON" "$HERE/gate.py" --status; ls "$GATE_SLOTS" 2>/dev/null; cat "$GATE_SLOTS"/*/owner 2>/dev/null
         tail -n 5 .fixloop/logs/gate-*.log 2>/dev/null | tail -n 20; exit 3
     fi
     nap 60; waited=$((waited + 60)); slept=$((slept + SLEPT))
