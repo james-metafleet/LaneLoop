@@ -245,8 +245,13 @@ cat > "$T/tpbin/gh" <<'EOF'
 # gh pr view <N>: "<base> <head>" ($SELFTEST_TP_ON, exits 1 when it's empty; head $SELFTEST_TP_HEAD, default ai-work/s);
 # gh pr view <branch below>: "number state" of its PR ($SELFTEST_TP_PARENT, default "40 OPEN"); gh pr edit fails when
 # $SELFTEST_TP_EDIT_FAIL is set. gh api GET .../stacks?pull_request=N: $SELFTEST_TP_DIR/stack_N, else [] (a 404 when
-# $SELFTEST_TP_NO_STACKS is set); gh api -X POST: logs the body, fails when $SELFTEST_TP_STACK_FAIL is set
+# $SELFTEST_TP_NO_STACKS is set); gh api -X POST: logs the body, fails when $SELFTEST_TP_STACK_FAIL is set.
+# A call starting with $SELFTEST_TP_FLAKY fails with an HTTP 502 while $SELFTEST_TP_DIR/flaky counts down to 0
 echo "gh $*" >> "$SELFTEST_TP_LOG"
+all="$*"; left=$(cat "$SELFTEST_TP_DIR/flaky" 2>/dev/null || echo 0)
+if [ -n "${SELFTEST_TP_FLAKY:-}" ] && [ "${all#"$SELFTEST_TP_FLAKY"}" != "$all" ] && [ "$left" -gt 0 ]; then
+  echo $((left - 1)) > "$SELFTEST_TP_DIR/flaky"; echo "HTTP 502: Bad Gateway (https://api.github.com/graphql)" >&2; exit 1
+fi
 case "$1 $2" in
   "pr view") case "$3" in
                *[!0-9]*) [ -n "${SELFTEST_TP_PARENT-40 OPEN}" ] || { echo "no pull requests found for branch \"$3\"" >&2; exit 1; }
@@ -268,13 +273,15 @@ EOF
 chmod +x "$T/tpbin/gh"
 [ "$WIN" = 1 ] && printf '@"%s" "%s" %%*\r\n' "$(cygpath -w "$(command -v bash)")" "$(cygpath -w "$T/tpbin/gh")" > "$T/tpbin/gh.cmd"
 export SELFTEST_TP_LOG="$T/tp-gh.log" SELFTEST_TP_DIR="$T/tpstk"; mkdir -p "$SELFTEST_TP_DIR"
-tpr() { : > "$SELFTEST_TP_LOG"; (cd "$sw" && PATH="${TP_PATH:-$T/tpbin}:$PATH" "$PY" "$T/fix/task.py" pr "$@" > "$T/tpr.out" 2>&1); }
+tpr() { : > "$SELFTEST_TP_LOG"; (cd "$sw" && PATH="${TP_PATH:-$T/tpbin}:$PATH" GH_RETRY_SECS=0 "$PY" "$T/fix/task.py" pr "$@" > "$T/tpr.out" 2>&1); }
 recorded() { "$PY" -c "import json,sys; print((json.load(open(sys.argv[1]))['pr'] or {}).get('number'))" "$sw/.fixloop/status.json"; }
 SELFTEST_TP_ON="$TB" SELFTEST_TP_EDIT_FAIL=1 tpr 41 https://github.com/o/r/pull/41; rc=$?
 check "a PR on the wrong base whose retarget fails is refused (exit $rc): nothing recorded" sh -c "[ $rc != 0 ] && [ '$(recorded)' = None ]"
 check "... saying why ($(tail -1 "$T/tpr.out" | cut -c1-80))" grep -q "HTTP 403" "$T/tpr.out"
 SELFTEST_TP_ON= tpr 41 https://github.com/o/r/pull/41; rc=$?
 check "a PR gh can't read is refused (exit $rc): its base can't be checked" sh -c "[ $rc != 0 ] && [ '$(recorded)' = None ]"
+check "... and isn't asked again: not finding the PR isn't a passing outage ($(grep -c 'pr view 41' "$SELFTEST_TP_LOG") reads)" \
+    test "$(grep -c 'pr view 41' "$SELFTEST_TP_LOG")" = 1
 SELFTEST_TP_ON=ai-work/below SELFTEST_TP_HEAD=ai-work/someone-else tpr 41 https://github.com/o/r/pull/41; rc=$?
 check "a PR of another branch is refused (exit $rc), and never retargeted" \
     sh -c "[ $rc != 0 ] && [ '$(recorded)' = None ] && grep -q 'ai-work/someone-else' '$T/tpr.out' && ! grep -q 'pr edit' '$SELFTEST_TP_LOG'"
@@ -318,6 +325,37 @@ check "... with a note" sh -c "(cd '$sw' && '$PY' '$T/fix/task.py' show) | grep 
 echo "$TB" > "$sw/.fixloop/base"
 fresh; SELFTEST_TP_ON="$TB" tpr 49 https://github.com/o/r/pull/49
 check "a PR on the base (the bottom of a stack) makes no stack call" sh -c "[ '$(recorded)' = 49 ] && ! grep -q 'gh api' '$SELFTEST_TP_LOG'"
+echo ai-work/below > "$sw/.fixloop/base"
+
+echo "== task.py pr: a passing GitHub outage (5xx, rate limit, timeout) on a read is retried before the PR is refused"
+echo 2 > "$SELFTEST_TP_DIR/flaky"
+fresh; SELFTEST_TP_FLAKY="pr view 50" SELFTEST_TP_ON=ai-work/below SELFTEST_TP_NO_STACKS=1 tpr 50 https://github.com/o/r/pull/50; rc=$?
+check "two 502s reading the PR's base, then an answer: recorded (exit $rc, $(grep -c 'pr view 50' "$SELFTEST_TP_LOG") reads)" \
+    sh -c "[ $rc = 0 ] && [ '$(recorded)' = 50 ] && [ \$(grep -c 'pr view 50' '$SELFTEST_TP_LOG') = 3 ]"
+echo 2 > "$SELFTEST_TP_DIR/flaky"
+fresh; SELFTEST_TP_FLAKY="api repos/o/r/stacks?pull_request=51" SELFTEST_TP_ON=ai-work/below tpr 51 https://github.com/o/r/pull/51; rc=$?
+check "two 502s reading the stacks, then an answer: stacked and recorded (exit $rc)" \
+    sh -c "[ $rc = 0 ] && [ '$(recorded)' = 51 ] && grep -qE 'POST repos/o/r/stacks \{\"pull_requests\": ?\[40, ?51\]\}' '$SELFTEST_TP_LOG'"
+echo 9 > "$SELFTEST_TP_DIR/flaky"
+fresh; SELFTEST_TP_FLAKY="pr view 52" SELFTEST_TP_ON=ai-work/below tpr 52 https://github.com/o/r/pull/52; rc=$?
+check "a read still failing after 3 tries is refused (exit $rc, $(grep -c 'pr view 52' "$SELFTEST_TP_LOG") reads): nothing recorded" \
+    sh -c "[ $rc != 0 ] && [ '$(recorded)' = None ] && [ \$(grep -c 'pr view 52' '$SELFTEST_TP_LOG') = 3 ] && grep -q 'HTTP 502' '$T/tpr.out'"
+echo 9 > "$SELFTEST_TP_DIR/flaky"
+fresh; SELFTEST_TP_FLAKY="api -X POST" SELFTEST_TP_ON=ai-work/below tpr 54 https://github.com/o/r/pull/54; rc=$?
+check "a write (making the stack) that hits a 502 isn't retried: refused, nothing recorded (exit $rc, $(grep -c '^POST' "$SELFTEST_TP_LOG") POSTs logged)" \
+    sh -c "[ $rc != 0 ] && [ '$(recorded)' = None ] && [ \$(grep -c 'api -X POST' '$SELFTEST_TP_LOG') = 1 ]"
+rm -f "$SELFTEST_TP_DIR/flaky"
+
+echo "== task.py pr: with no BASE in loop.json, the trunk is never taken for a branch below"
+cp "$T/fix/loop.json" "$T/loop.json.keep"
+"$PY" -c "import json,sys; d=json.load(open(sys.argv[1])); d.pop('BASE',None); json.dump(d,open(sys.argv[1],'w'))" "$T/fix/loop.json"
+echo main > "$sw/.fixloop/base"
+fresh; SELFTEST_TP_ON=main tpr 53 https://github.com/o/r/pull/53; rc=$?
+check "a PR on its branch's base, with no BASE set, is recorded with no stack call (exit $rc)" \
+    sh -c "[ $rc = 0 ] && [ '$(recorded)' = 53 ] && ! grep -qE 'gh api|pr view main' '$SELFTEST_TP_LOG'"
+check "... and the note says its GitHub stack wasn't checked" \
+    sh -c "(cd '$sw' && '$PY' '$T/fix/task.py' show) | grep -q \"PR #53 opened.*stack wasn't checked\""
+mv "$T/loop.json.keep" "$T/fix/loop.json"
 rw="$T/race"; mkdir -p "$rw/.fixloop"
 echo '{"slug":"r","status":"in_progress","phase":"green","pr":null,"notes":[],"reviews":[],"summary":""}' > "$rw/.fixloop/status.json"
 notes() { for i in $(seq 1 12); do (cd "$rw" && "$PY" "$T/fix/task.py" note "$1$i") >/dev/null 2>&1; done; }
@@ -1412,6 +1450,7 @@ check "the stacked branch takes GitHub's rebase (exit $rc: $(tail -1 "$R/mb.out"
     sh -c "[ $rc = 0 ] && [ \"\$(git -C '$R/r3-wt/stk-up2' rev-parse HEAD)\" = \"\$(git -C '$R/r3-wt/stk-up2' rev-parse origin/ai-work/stk-up2)\" ]"
 check "... sits on the PR's live base" sh -c "[ \"\$(cat '$R/r3-wt/stk-up2/.fixloop/base')\" = develop ]"
 check "... and neither retargets its PR nor merges" sh -c "! grep -q 'pr edit' '$R/mb/gh.log' && ! git -C '$R/r3-wt/stk-up2' rev-parse -q --verify HEAD^2 >/dev/null"
+check "... nor asks GitHub for a stack it doesn't need once the branch was rebased" sh -c "! grep -q 'gh api' '$R/mb/gh.log'"
 rm -f "$R/mb/stack_13"; echo ai-work/stk-low2 > "$R/r3-wt/stk-up2/.fixloop/base"
 git -C "$R/r3-wt/stk-up2" reset -q --hard "$old"; git -C "$R/r3-wt/stk-up2" update-ref refs/remotes/origin/ai-work/stk-up2 "$old"
 mb stk-up2; rc=$?
@@ -1422,6 +1461,14 @@ head=$(git -C "$R/r3-wt/stk-up2" rev-parse HEAD); : > "$R/mb/gh.log"
 mb stk-up2; rc=$?
 check "in a stack GitHub moved but hasn't rebased yet: INCOMPLETE, nothing changed (exit $rc)" \
     sh -c "[ $rc = 4 ] && grep -q \"hasn't rebased\" '$R/mb.out' && [ \"\$(git -C '$R/r3-wt/stk-up2' rev-parse HEAD)\" = $head ] && ! grep -q 'pr edit' '$R/mb/gh.log'"
+# the remote branch's reflog expired (or was never written): the tip origin/<branch> had before the fetch still counts as pushed
+echo ai-work/stk-low2 > "$R/r3-wt/stk-up2/.fixloop/base"
+git -C "$R/r3-wt/stk-up2" reset -q --hard "$old"; git -C "$R/r3-wt/stk-up2" update-ref refs/remotes/origin/ai-work/stk-up2 "$old"
+rm -f "$(git -C "$R/repo" rev-parse --absolute-git-dir)/logs/refs/remotes/origin/ai-work/stk-up2"
+logged=$(git -C "$R/r3-wt/stk-up2" reflog show --format=%H refs/remotes/origin/ai-work/stk-up2 2>/dev/null | wc -l | tr -d ' ')
+mb stk-up2; rc=$?
+check "with the remote branch's reflog gone ($logged entries), GitHub's rebase is still taken (exit $rc: $(tail -1 "$R/mb.out" | cut -c1-60))" \
+    sh -c "[ $logged = 0 ] && [ $rc = 0 ] && [ \"\$(git -C '$R/r3-wt/stk-up2' rev-parse HEAD)\" = \"\$(git -C '$R/r3-wt/stk-up2' rev-parse origin/ai-work/stk-up2)\" ]"
 
 echo "== fixloop: a branch whose parent merged (and was deleted) before it started is built from where the parent merged"
 git -C "$R/repo" worktree add -q -b ai-work/stk-gone "$R/gone" origin/develop 2>/dev/null
