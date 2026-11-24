@@ -243,7 +243,9 @@ the run for what isn't a ticket yet.
      its PR (`gh pr edit --base`); if the retarget fails it prints INCOMPLETE with the reason, changes nothing and exits
      4: fix that (usually gh auth) and run it again. In a GitHub stack, GitHub has already moved the PR down and rebased
      (force-pushed) its branch: `merge_base.sh` then brings the local branch to `origin/<branch>`, writes the PR's live
-     base to `.fixloop/base`, merges and retargets nothing and exits 0; local commits never pushed stop it INCOMPLETE
+     base to `.fixloop/base`, merges and retargets nothing and exits 0. It tells "rebased" from "local work never
+     pushed" by every tip `origin/<branch>` has had here: the one before its fetch and the reflog's (which expires), so
+     a rebase is still seen with no reflog. Local commits never pushed stop it INCOMPLETE
      (exit 4) rather than lose them, as does a stacked PR GitHub hasn't rebased yet (run it again later). Never
      force-push a stacked branch. Clean: check the shared files it prints for semantic clashes and build. Conflicts:
      - Two sides added different members, rows or sections at the same spot: keep both; when the conflict sits mid-method,

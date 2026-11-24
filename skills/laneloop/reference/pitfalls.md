@@ -146,6 +146,11 @@ Each entry is a failure seen in a real run. Symptom → cause → fix.
   GitHub retargets the next PR and rebases (force-pushes) its branch, so a merge on top of the old local branch can't
   be pushed. → `merge_base.sh` takes GitHub's rebase instead (stopping on unpushed local commits); nobody force-pushes a
   stacked branch.
+- **A GitHub rebase could read as "not rebased yet" forever.** → `merge_base.sh` knew the remote branch's old tips only
+  from the reflog of `origin/<branch>`, which expires. → It also counts that ref's tip before the fetch, the way
+  `push --force-with-lease` tells a rewrite. In the same review: `task.py pr` retries a read that hits a passing outage
+  (5xx, rate limit, timeout) 3 times before refusing, and with no `BASE` in loop.json it makes no stack call (noted)
+  rather than take the trunk for a branch below.
 
 ## The orchestrator
 
