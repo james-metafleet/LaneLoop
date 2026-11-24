@@ -285,6 +285,12 @@ check "... and isn't asked again: not finding the PR isn't a passing outage ($(g
 SELFTEST_TP_ON=ai-work/below SELFTEST_TP_HEAD=ai-work/someone-else tpr 41 https://github.com/o/r/pull/41; rc=$?
 check "a PR of another branch is refused (exit $rc), and never retargeted" \
     sh -c "[ $rc != 0 ] && [ '$(recorded)' = None ] && grep -q 'ai-work/someone-else' '$T/tpr.out' && ! grep -q 'pr edit' '$SELFTEST_TP_LOG'"
+# with no branch checked out (a chain may run `git checkout <base>~0`), whose PR it is can't be checked: never retarget it
+git -C "$sw" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x && git -C "$sw" checkout -q --detach
+SELFTEST_TP_ON="$TB" SELFTEST_TP_HEAD=ai-work/someone-else tpr 41 https://github.com/o/r/pull/41; rc=$?
+check "on a detached HEAD a PR is refused (exit $rc), and never retargeted: it may be another branch's" \
+    sh -c "[ $rc != 0 ] && [ '$(recorded)' = None ] && grep -qi 'detached' '$T/tpr.out' && ! grep -q 'pr edit' '$SELFTEST_TP_LOG'"
+git -C "$sw" checkout -q ai-work/s
 SELFTEST_TP_ON=ai-work/below SELFTEST_TP_NO_STACKS=1 tpr 41 https://github.com/o/r/pull/41
 check "a PR already on the branch's base is recorded, and not edited" \
     sh -c "[ '$(recorded)' = 41 ] && grep -q 'pr view 41' '$SELFTEST_TP_LOG' && ! grep -q 'pr edit' '$SELFTEST_TP_LOG'"
@@ -317,8 +323,12 @@ check "a second PR on the same parent (a fork: stacks are linear) is recorded, n
 check "... and the note says it stays base-chained" sh -c "(cd '$sw' && '$PY' '$T/fix/task.py' show) | grep -q 'PR #46 opened.*base-chained'"
 rm -f "$SELFTEST_TP_DIR/stack_40"
 fresh; SELFTEST_TP_ON=ai-work/below SELFTEST_TP_STACK_FAIL=1 tpr 47 https://github.com/o/r/pull/47; rc=$?
-check "a stack GitHub refuses to make is refused (exit $rc): nothing recorded" sh -c "[ $rc != 0 ] && [ '$(recorded)' = None ]"
-check "... saying why" grep -q "HTTP 422" "$T/tpr.out"
+# stacking is extra: a refusal must never cost the PR its record, or the runner holds back every branch above it
+check "a stack GitHub refuses to make still records the PR, base-chained (exit $rc)" sh -c "[ $rc = 0 ] && [ '$(recorded)' = 47 ]"
+check "... and says why, on stderr and in the note" sh -c "grep -q 'HTTP 422' '$T/tpr.out' && (cd '$sw' && '$PY' '$T/fix/task.py' show) | grep -q 'PR #47 opened.*not in a GitHub stack.*HTTP 422'"
+fresh; SELFTEST_TP_ON=ai-work/below SELFTEST_TP_PARENT= tpr 50 https://github.com/o/r/pull/50; rc=$?
+check "a PR below that gh can't find still records this PR, unstacked, with a note (exit $rc)" \
+    sh -c "[ $rc = 0 ] && [ '$(recorded)' = 50 ] && (cd '$sw' && '$PY' '$T/fix/task.py' show) | grep -q 'PR #50 opened.*not in a GitHub stack'"
 fresh; SELFTEST_TP_ON=ai-work/below SELFTEST_TP_NO_STACKS=1 tpr 48 https://github.com/o/r/pull/48; rc=$?
 check "a repository without stacks (404) records the PR base-chained (exit $rc)" sh -c "[ $rc = 0 ] && [ '$(recorded)' = 48 ] && ! grep -q POST '$SELFTEST_TP_LOG'"
 check "... with a note" sh -c "(cd '$sw' && '$PY' '$T/fix/task.py' show) | grep -q 'PR #48 opened.*no GitHub stacks'"
@@ -342,8 +352,8 @@ check "a read still failing after 3 tries is refused (exit $rc, $(grep -c 'pr vi
     sh -c "[ $rc != 0 ] && [ '$(recorded)' = None ] && [ \$(grep -c 'pr view 52' '$SELFTEST_TP_LOG') = 3 ] && grep -q 'HTTP 502' '$T/tpr.out'"
 echo 9 > "$SELFTEST_TP_DIR/flaky"
 fresh; SELFTEST_TP_FLAKY="api -X POST" SELFTEST_TP_ON=ai-work/below tpr 54 https://github.com/o/r/pull/54; rc=$?
-check "a write (making the stack) that hits a 502 isn't retried: refused, nothing recorded (exit $rc, $(grep -c '^POST' "$SELFTEST_TP_LOG") POSTs logged)" \
-    sh -c "[ $rc != 0 ] && [ '$(recorded)' = None ] && [ \$(grep -c 'api -X POST' '$SELFTEST_TP_LOG') = 1 ]"
+check "a write (making the stack) that hits a 502 isn't retried: the PR is recorded unstacked, with a note (exit $rc, $(grep -c '^POST' "$SELFTEST_TP_LOG") POSTs logged)" \
+    sh -c "[ $rc = 0 ] && [ '$(recorded)' = 54 ] && [ \$(grep -c 'api -X POST' '$SELFTEST_TP_LOG') = 1 ] && (cd '$sw' && '$PY' '$T/fix/task.py' show) | grep -q 'PR #54 opened.*not in a GitHub stack.*HTTP 502'"
 rm -f "$SELFTEST_TP_DIR/flaky"
 
 echo "== task.py pr: with no BASE in loop.json, the trunk is never taken for a branch below"

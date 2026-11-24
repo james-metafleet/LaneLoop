@@ -3,12 +3,13 @@
   show                         the task, phase, notes so far
   phase NAME "what was done"   NAME: red | green | docs | gate | security | pr | ci | design
   note "text"                  progress, decisions, gotchas (keep it short)
-  pr NUMBER URL                the PR you opened. It must be this branch's and sit on your base (.fixloop/base): one
-                               opened on another base is retargeted to it, and if gh can't read or retarget it, nothing
-                               is recorded (exit 1). On a branch below (not the run's base) it also joins that branch's
-                               PR in a GitHub stack (made, or added to on top); a refused stack records nothing (exit 1).
-                               A read that hits a passing outage (5xx, rate limit, timeout) is tried 3 times, 5 s apart,
-                               before it refuses
+  pr NUMBER URL                the PR you opened. It must be this branch's (checked out, not a detached HEAD) and sit on
+                               your base (.fixloop/base): one opened on another base is retargeted to it, and if gh can't
+                               read or retarget it, nothing is recorded (exit 1). On a branch below (not the run's base)
+                               it also joins that branch's PR in a GitHub stack (made, or added to on top); if GitHub
+                               refuses the stack, the PR is still recorded, base-chained, and the note says why. A read
+                               that hits a passing outage (5xx, rate limit, timeout) is tried 3 times, 5 s apart, before
+                               it refuses
   review "comment (who, where, comment id)" "proposed resolution"
                                a review comment that needs action: PROPOSE only, never apply
   ask "Title" "question" "recommended answer" ["other answer" ...]
@@ -165,7 +166,10 @@ def stacked(n):
         mine = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True, timeout=30).stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
         mine = ""
-    if mine and head != mine:
+    if not mine:   # a detached HEAD: whose PR this is can't be checked, so it is never retargeted
+        raise SystemExit(f"PR #{n} not recorded: no branch is checked out here (a detached HEAD), so it can't be checked "
+                         f"as this branch's. Check out this branch, then run task.py pr again")
+    if head != mine:
         raise SystemExit(f"PR #{n} not recorded: it is {head}'s pull request, not this branch's ({mine}). Check the number")
     if on == base:
         return base, f" on {base}"
@@ -183,28 +187,32 @@ def stacks_in(doc):
     return [s for v in doc for s in stacks_in(v)] if isinstance(doc, list) else []
 
 
+class NotStacked(Exception):
+    """GitHub didn't put the PR in a stack: the PR is still recorded, base-chained, and the note says why."""
+
+
 def github_stack(n, base):
     """A PR on a branch below (not the run's BASE) joins that branch's PR in a GitHub stack, so the owner sees and merges
     them as one, and GitHub moves the PR down itself when the one below merges. Stacks are linear: a second PR on the
-    same parent stays base-chained. Returns the note's tail; exits non-zero, recording nothing, if GitHub refuses."""
+    same parent stays base-chained. Returns the note's tail. Stacking is extra: if GitHub refuses it, or can't say, this
+    raises NotStacked and the PR is recorded all the same (refusing it would hold back every branch stacked above it)."""
     if not trunk():
         return "; its GitHub stack wasn't checked: no BASE in loop.json to tell the bottom of a stack from a branch below"
     if base == trunk():
         return ""
     repo = ["--repo", CONF["GH_REPO"]] if CONF.get("GH_REPO") else []
     api = f"repos/{CONF.get('GH_REPO') or '{owner}/{repo}'}/stacks"
-    refused = f"PR #{n} not recorded: it sits on {base}, but GitHub"
 
     def stack_of(pr):
         rc, out, err = gh_retry("api", f"{api}?pull_request={pr}")
         if rc and "404" in err:
             return None
         if rc:
-            raise SystemExit(f"{refused} couldn't say which stack #{pr} is in ({err}). Run task.py pr again")
+            raise NotStacked(f"GitHub couldn't say which stack #{pr} is in ({err})")
         try:
             found = stacks_in(json.loads(out or "[]"))
         except ValueError:
-            raise SystemExit(f"{refused}'s stack answer for #{pr} wasn't JSON ({out[:100]}). Run task.py pr again")
+            raise NotStacked(f"GitHub's stack answer for #{pr} wasn't JSON ({out[:100]})")
         if not found:
             return {}
         prs = [p if isinstance(p, int) else (p or {}).get("number") for p in found[0]["pull_requests"]]
@@ -215,16 +223,16 @@ def github_stack(n, base):
         rc, out, err = gh_retry("api", "-X", "POST", path, "--input", "-", stdin=json.dumps({"pull_requests": prs}),
                                 again=re.compile("409"))
         if rc:
-            raise SystemExit(f"{refused} refused to stack it ({err}). Stack it by hand from the PR page, or run task.py pr again")
+            raise NotStacked(f"GitHub refused to stack it ({err})")
         try:
             return (stacks_in(json.loads(out)) or [json.loads(out)])[0].get("number")
         except (ValueError, AttributeError):
             return None
 
     rc, below, err = gh_retry("pr", "view", base, "--json", "number,state", "--jq", '"\\(.number) \\(.state)"', *repo)
-    if rc or not below:
-        raise SystemExit(f"{refused} couldn't find the PR of {base} below it ({err}). Run task.py pr again")
-    parent, state = below.split(" ", 1)
+    parent, _, state = below.partition(" ")
+    if rc or not parent.isdigit() or not state:
+        raise NotStacked(f"gh couldn't find the PR of {base} below it ({err or below})")
     if state != "OPEN":
         return f"; not in a GitHub stack: the PR below, #{parent}, is {state.lower()}"
     mine = stack_of(n)
@@ -313,7 +321,12 @@ def main(a):
         if not a[1].isdigit():
             raise SystemExit(f"pr takes the PR's number, not {a[1]!r}\n{USAGE}")
         base, where = stacked(a[1])
-        where += github_stack(a[1], base)
+        try:
+            where += github_stack(a[1], base)
+        except NotStacked as e:   # recorded all the same, base-chained: the owner can stack it from the PR page
+            where += f"; not in a GitHub stack: {e}"
+            print(f"task.py: PR #{a[1]} is recorded but not stacked: {e}. It stays base-chained; the owner can stack it "
+                  f"from the PR page", file=sys.stderr)
     with locked():
         d = load()
         change(cmd, a, d, where)

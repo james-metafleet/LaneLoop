@@ -104,7 +104,9 @@ approval) and the owner merging. Never give a chain's account more rights than t
 
 Every brief carries `Stacked on: <slug>` (or `-` for the bottom of a stack): the chain's worktree is built from that
 branch, its base is kept in `.fixloop/base`, and its PR targets it. `task.py pr` retargets a PR opened elsewhere and puts
-it in a GitHub stack with the PR below (a second child of one parent stays base-chained: stacks are linear). If that
+it in a GitHub stack with the PR below (a second child of one parent stays base-chained: stacks are linear). Stacking
+is extra: if GitHub refuses it, the PR is still recorded, base-chained, and the note says why. It refuses a PR it can't
+check is this branch's (another branch's, or no branch checked out), and never retargets one. If that
 branch has already merged, the chain is built from what it merged into. The runner starts the chain once that branch has
 opened its PR, or, for a design branch on a design branch, once that one has pushed its page (ended awaiting the owner).
 `task.py size` and `egm_plan.py boundary` measure a stacked branch against the branch below it.
