@@ -131,7 +131,7 @@ Machine fallbacks (doctor.py says when each applies):
 
 | File | What |
 |---|---|
-| `plan.example.json` → `plan.json` | Defects, decisions, branches by wave, in stack order (each on the one before it; `"on"` names another parent, `null` a new stack). |
+| `plan.example.json` → `plan.json` | Defects, decisions, branches by wave; `"on": "<slug>"` stacks a branch on the one it builds on, and a branch without it runs in parallel. |
 | `egm_plan.py import\|check\|render\|boundary` | The hand-off from EGM ([reference/egm.md](../reference/egm.md)): imports an approved EGM design doc into `plan.json` (goals, journeys, files, verification); checks the branches drawn from it (design on the base, every file owned once per wave, every journey delivered, dependencies in earlier waves); renders the split as `fanout.md` for the Goldfish review; lists what a chain changed outside its files (a stacked branch: on top of the branch below it). |
 | `plan.egm.example.json` | A plan imported from an EGM design, with its branches drawn up (`files`, `cujs`, `depends_on`). |
 | `fanout_readiness.md`, `fanout-readiness-standard.md` | The Goldfish reviewer and standard `/egm:egm-review-loop` uses on `fanout.md`: hidden coupling within a wave, unowned work, missing dependencies, boundaries too narrow for their tests. |

@@ -11,11 +11,10 @@ max_lines) with the plan's estimate: task.py refuses to open or hand over a pull
 overwrites a brief a chain already copied: a running branch reads .fixloop/brief.md, so change scope through a task.py
 note instead.
 
-Feature builds ship as PR stacks, never as parallel PRs off the base (parallel PRs on one feature keep conflicting with
-each other and with the base). A plan's branches form one stack in the order they are listed: each sits on the branch
-before it, the first on the base. A branch's own "on" names another parent ("on": "<slug>"), or starts another stack on
-the base ("on": null). Every brief says "Stacked on: <slug>" (or "-" for the base): the chain builds on that branch and
-opens its PR against it, and the runner starts it only once that branch has opened its PR.
+Dependent branches ship as PR stacks; independent ones run in parallel. A branch that builds on another branch's code
+names it: "on": "<slug>". It is built on that branch, opens its PR against it, and the runner starts it once that branch
+has opened its PR. A branch with no "on" (or "on": null) depends on nothing: it is built from the base and starts at once,
+beside any stack. Every brief says "Stacked on: <slug>" (or "-" for the base).
 
 A plan imported from an EGM design (egm_plan.py import) adds to each brief: the design as the spec (path and hash), the
 files the branch may create or change (its boundary), the journeys it delivers, and the design's verification steps.
@@ -68,11 +67,12 @@ def design_section(plan, b, design):
 
 
 def stack_parents(plan):
-    """slug -> the slug it is stacked on (None: on the base). Refuses a parent the plan doesn't have, and a loop."""
+    """slug -> the slug it is stacked on (None: independent, on the base). Only an explicit "on" stacks a branch.
+    Refuses a parent the plan doesn't have, and a loop."""
     slugs = [b["slug"] for b in plan["branches"]]
     parents = {}
-    for i, b in enumerate(plan["branches"]):
-        on = b["on"] if "on" in b else (slugs[i - 1] if i else None)
+    for b in plan["branches"]:
+        on = b.get("on")
         if on is not None and (on not in slugs or on == b["slug"]):
             raise SystemExit(f"{b['slug']} is stacked on {on}, which isn't another branch in the plan")
         parents[b["slug"]] = on

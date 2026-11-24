@@ -81,9 +81,9 @@ with `consult.py plan`, and carry its findings into the next draft. A run that s
      the feature's decisions log as a D-numbered entry; each term the owner settled goes into `docs/glossary.md`.
    - Recompute the frontier and publish the next round, until it is empty: nothing left silently assumed.
 5. **Draw up the plan** on the same page: branches by wave (wave 1 = no gate, wave 2 = mockup-gated, wave 3 =
-   schema-gated; a branch that depends on another waits for it), listed in **stack order**: features ship as PR stacks,
-   never as parallel PRs off the base, so each branch is built on the one listed before it (`"on": "<slug>"` names
-   another, `"on": null` starts a separate stack for an unrelated fix). Each has a `title`, its binding `scope` and its
+   schema-gated; a branch that depends on another waits for it). A branch that builds on another branch's code names it,
+   `"on": "<slug>"`: it is stacked on it, built on that branch and opening its PR against it. A branch with no `"on"` is
+   independent: it is built from the base and runs in parallel with everything else. Each has a `title`, its binding `scope` and its
    `tasks`: every outcome the branch delivers, each with the test that proves it (a design branch's tasks are what its
    page must show), and, for a build branch, `est_lines` under the PR cap ("Sizing Branches" below). A branch with no
    tasks is not planned yet.

@@ -79,7 +79,7 @@ each with these fields:
 | `files` | The design's files this branch creates or changes: its binding boundary. A file matching a design glob counts. |
 | `cujs` | The journeys it delivers (`CUJ1`, ...). Each is proved by one of its tasks. |
 | `depends_on` | Slugs it builds on. Each sits in an earlier wave, and this branch starts once they merged, or, stacked on one of them, once that one has opened its PR. |
-| `on` | The branch it is stacked on (SKILL.md non-negotiable 13). Left out, it is the branch listed before it; `null` starts a stack of its own on the base. |
+| `on` | The branch it builds on and is stacked on (SKILL.md non-negotiable 13). Left out (or `null`), the branch is independent: built from the base, running in parallel. |
 | `est_lines` | Its pull request's estimated size, in changed lines with tests (a build branch, under `PR_MAX_LINES`). A branch that can't be split gets its own `max_lines` with `max_lines_why`, which the owner signs off with the plan. |
 
 - Split along the design's phases (EGM's readiness standard asks for stable, buildable phases): each phase's files
@@ -90,9 +90,8 @@ each with these fields:
 - Each build branch is one pull request of at most `PR_MAX_LINES` changed lines (400 by default), tests included: size
   it with `est_lines` and aim for three quarters of the cap ([orchestrator.md](orchestrator.md), "Sizing Branches"). A
   design phase too big for one PR becomes several branches, the later ones depending on the earlier.
-- List the branches in stack order: each is built on the one listed before it and starts once that one has opened its
-  PR. Give a branch `"on": null` to run it beside the others as a stack of its own (the one-owner-per-wave rule is what
-  keeps such side-by-side branches from colliding), and list a branch that depends on another straight after it.
+- A wave's branches run in parallel (the one-owner-per-wave rule keeps them from colliding). Set `"on": "<slug>"` only
+  where a branch builds on another branch's code: it is stacked on it and starts once that one has opened its PR.
 - Waves here order dependencies: wave 1 starts first, and each later wave starts once the branches it builds on merged
   (or, stacked on them, once they have opened their PRs).
   The sign-off gates still apply inside that order: a change users see needs its mockup signed off, a change to what is

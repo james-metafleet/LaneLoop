@@ -14,8 +14,8 @@ session you are in is the **orchestrator**: it never does the bulk work itself; 
 their output into decisions for the owner, and carries those decisions back in.
 
 At full size that means a test plan of 75 tests run live, a fix plan of 40+ items with a dozen decisions, two or three
-waves of stacked PRs (each fix on its own branch, built on the one below it, checked out in its own git worktree), design
-and schema pages signed off before anything is built, review rounds of 60+ items, merge reconciliation, and a re-verify
+waves of PRs (each fix on its own branch, checked out in its own git worktree; a branch that builds on another is stacked
+on it, the rest run in parallel), design and schema pages signed off before anything is built, review rounds of 60+ items, merge reconciliation, and a re-verify
 run.
 
 ## When to opt in (and when not)
@@ -39,8 +39,8 @@ questions in one batch, each with its recommended answer first:
 >    branches (each with its own files, the journeys it delivers and its tasks, each with the test that proves it, and
 >    each small enough for a pull request of at most **400** changed lines), fresh reviewers check the split for
 >    collisions, and it goes on a page for your sign-off. Nothing starts before you sign it off.
-> 3. **Fix**: chains, each fix on its own branch in its own worktree, the branches stacked (each PR on the one before
->    it, never parallel PRs off the base): failing test first, fix, docs, the full gate, security review, PR, CI. UI and
+> 3. **Fix**: chains, each fix on its own branch in its own worktree; independent branches run in parallel, and a
+>    branch that builds on another is stacked on it (its PR on that one's): failing test first, fix, docs, the full gate, security review, PR, CI. UI and
 >    stored-data changes stop at a page for your sign-off before they're built.
 >    One live page follows the whole session: a tab per chain (and one for the verify loop) with where it is, what it
 >    has done and what it is asking you, under a dashboard of every PR (they all carry one label). Here I only post the
@@ -124,12 +124,13 @@ Write the answers into the runbook as the run's hard rules (step 0). If the owne
     to open or hand over a PR over the cap, and the chain stops for a split instead of trimming tests or packing code to
     fit. Only the owner raises a cap: for one branch in the plan (`max_lines` with `max_lines_why`), or mid-run
     (`task.py cap`).
-13. **Features ship as PR stacks, never as parallel PRs off the base.** Parallel PRs on one feature keep conflicting
-    with each other and with the base, and every merge reopens the others. A plan's branches form a stack in the order
-    they are listed: each is built on the branch before it and opens its PR against it; only the bottom targets the
-    base. `"on": "<slug>"` names another parent, `"on": null` starts a separate stack (an unrelated fix, or branches of
-    a wave meant to run side by side). The runner starts a branch once the one below it has opened its PR, and its size
-    counts only what it adds on top. The stack is enforced, not just instructed: `task.py pr` records a chain's PR only
+13. **Dependent branches ship as PR stacks; independent ones run in parallel.** Branches that build on each other's
+    code, opened as parallel PRs off the base, keep conflicting with each other and with the base, and every merge
+    reopens the others. So the planner sets `"on": "<slug>"` on a branch only where it builds on that branch's code: it
+    is built on it and opens its PR against it, and only the bottom of a stack targets the base. A branch with no `"on"`
+    depends on nothing: it is built from the base and runs at once, beside any stack (within `MAX_PAR`). For example
+    1 <- 2 <- 3 <- 4 plus independent A and X: 1, A and X start together, and 2 starts once 1 has opened its PR. How
+    much stacks depends on the plan. A stacked branch's size counts only what it adds on top. The stack is enforced, not just instructed: `task.py pr` records a chain's PR only
     once it sits on the branch below (`.fixloop/base`), retargeting one opened elsewhere and refusing if it can't, and
     puts it in a **GitHub stack** with the PR below (where the repository has stacks), so the owner sees and merges the
     stack as one. GitHub stacks are linear: a second child of the same parent stays base-chained. A stack is merged from
@@ -202,8 +203,8 @@ into it: a run keeps the copy it was made with, and picks up a newer kit only wh
   the answers from the page (`ArtifactData` list `answers`), record each as the decision's `decided`, and work out the
   next round; the `domain-modeling` skill writes each decision and term down as it lands.
 - When no question is left, draw up `plan.json`: defects (why with file:line, fix, size, gate), the decisions by round,
-  branches by wave (wave 1 has no gate, wave 2 needs a mockup, wave 3 a schema page) in stack order (non-negotiable 13),
-  each with a `title`, its `tasks`, each task with the test that proves it, and `est_lines`: its PR's size, under the cap (`pr_size.py plan plan.json`
+  branches by wave (wave 1 has no gate, wave 2 needs a mockup, wave 3 a schema page), with `"on"` on each branch that builds on
+  another (non-negotiable 13), each with a `title`, its `tasks`, each task with the test that proves it, and `est_lines`: its PR's size, under the cap (`pr_size.py plan plan.json`
   lists them; [reference/orchestrator.md](reference/orchestrator.md), "Sizing Branches").
 - Either way: `plan_page.py`, publish (an EGM plan's page links the design and shows each branch's files and journeys);
   the owner signs off on the page; `sign_plan.py plan.json "<when>" "<who>"`.

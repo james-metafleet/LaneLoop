@@ -336,10 +336,13 @@ plan_edit "p['branches'][1]['tasks'] = [{'id': 'T1', 'text': 'The panel says Not
 (cd "$T/fix" && "$PY" sign_plan.py plan-t.json 2026-11-07 Selftest >/dev/null && "$PY" make_briefs.py plan-t.json --wave 1 >/dev/null)
 check "a signed-off plan's briefs say so" grep -q "^Plan signed off: 2026-11-07 by Selftest" "$T/fix/briefs/retry-current-customer.md"
 check "... and list the branch's tasks with the test that proves each" grep -q "^- T1 · .* · proved by: " "$T/fix/briefs/retry-current-customer.md"
-# Features ship as PR stacks: each branch sits on the one listed before it, the first on the base
-check "the plan's first branch is the bottom of its stack, on the base" grep -q "^Stacked on: -$" "$T/fix/briefs/retry-current-customer.md"
+# A branch that builds on another's code is stacked on it ("on"); every other branch is independent, on the base
+check "a branch with no \"on\" is independent: it sits on the base" grep -q "^Stacked on: -$" "$T/fix/briefs/retry-current-customer.md"
 (cd "$T/fix" && "$PY" make_briefs.py plan-t.json --wave 2 >/dev/null 2>&1)
-check "... and the next is stacked on the branch before it" grep -q "^Stacked on: retry-current-customer$" "$T/fix/briefs/order-panel-not-syncing.md"
+check "... the next one too: listing order alone stacks nothing" grep -q "^Stacked on: -$" "$T/fix/briefs/order-panel-not-syncing.md"
+plan_edit "p['branches'][1]['on'] = 'retry-current-customer'"
+(cd "$T/fix" && "$PY" make_briefs.py plan-t.json --wave 2 >/dev/null 2>&1)
+check "\"on\": \"<slug>\" stacks a branch on the one it builds on" grep -q "^Stacked on: retry-current-customer$" "$T/fix/briefs/order-panel-not-syncing.md"
 plan_edit "p['branches'][1]['on'] = 'no-such-branch'"
 check "make_briefs refuses a branch stacked on one the plan doesn't have" \
     sh -c "cd '$T/fix' && ! '$PY' make_briefs.py plan-t.json --wave 2 >/dev/null 2>&1 && '$PY' make_briefs.py plan-t.json --wave 2 2>&1 | grep -q no-such-branch"
@@ -347,8 +350,21 @@ plan_edit "p['branches'][0]['on'] = 'order-panel-not-syncing'; p['branches'][1][
 check "make_briefs refuses a stack that loops" sh -c "cd '$T/fix' && ! '$PY' make_briefs.py plan-t.json --wave 1 >/dev/null 2>&1"
 plan_edit "p['branches'][0].pop('on'); p['branches'][1]['on'] = None"
 (cd "$T/fix" && "$PY" make_briefs.py plan-t.json --wave 2 >/dev/null 2>&1)
-check "\"on\": null starts another stack, on the base" grep -q "^Stacked on: -$" "$T/fix/briefs/order-panel-not-syncing.md"
+check "\"on\": null is independent too, on the base" grep -q "^Stacked on: -$" "$T/fix/briefs/order-panel-not-syncing.md"
 plan_edit "p['branches'][1].pop('on')"
+# 1 <- 2 <- 3 <- 4 build on each other; A and X build on nothing: one stack four deep, and two branches beside it
+"$PY" - "$T/fix/plan-stk.json" <<'EOF'
+import json, sys
+b = lambda slug, on=None: dict({"slug": slug, "wave": 1, "mode": "build", "scope": "s", "est_lines": 50,
+                                "tasks": [{"id": "T1", "text": "t", "test": "x"}]}, **({"on": on} if on else {}))
+json.dump({"signed_off": {"at": "2026-11-24", "by": "Selftest"},
+           "branches": [b("t1"), b("t2", "t1"), b("t3", "t2"), b("t4", "t3"), b("ind-a"), b("ind-x")]}, open(sys.argv[1], "w"))
+EOF
+(cd "$T/fix" && "$PY" make_briefs.py plan-stk.json --wave 1 --queue queue-mixed.txt >/dev/null 2>&1)
+stacked_on() { sed -n 's/^Stacked on: //p' "$T/fix/briefs/$1.md"; }
+check "a plan of 1 <- 2 <- 3 <- 4 plus A and X: one stack four deep ($(for x in t1 t2 t3 t4; do printf '%s:%s ' $x "$(stacked_on $x)"; done))" \
+    sh -c "[ '$(stacked_on t1)' = - ] && [ '$(stacked_on t2)' = t1 ] && [ '$(stacked_on t3)' = t2 ] && [ '$(stacked_on t4)' = t3 ]"
+check "... and A and X unstacked, on the base" sh -c "[ '$(stacked_on ind-a)' = - ] && [ '$(stacked_on ind-x)' = - ]"
 (cd "$T/fix" && "$PY" plan_page.py plan-t.json "$T/plan.html" "Selftest Plan" > "$T/plan_page.out" 2>&1)
 check "plan_page renders the plan into the page" sh -c "grep -q 'retry-current-customer' '$T/plan.html' && ! grep -qE '__PLAN__|__TWO_WAY__' '$T/plan.html'"
 check "plan_page prints the capabilities to publish it with" grep -q '"comments"' "$T/plan_page.out"
@@ -737,6 +753,22 @@ check "runner: a design branch on a design branch starts once that one has pushe
 check "runner: ... a build branch on it still waits for a pull request" \
     sh -c "grep -q 'not started: dsg-build: stacked on dsg-nopr' '$T/fix/logs/runner.log' && ! grep -q 'chain started: dsg-build ' '$T/fix/logs/runner.log'"
 check "runner: ... and the runner still ends" sh -c "tail -1 '$T/fix/logs/runner.log' | grep -q 'all chains ended'"
+# independent branches run beside a stack: with MAX_PAR 3, the stack's bottom, A and X start together; 2 waits for 1's PR
+n0=$(wc -l < "$T/fix/logs/runner.log")
+( cd "$T/fix" && QUEUE=queue-mixed.txt MAX_PAR=3 STAGGER_SECS=0 POLL_SECS=1 ./runner.sh > "$T/runner-mixed.out" 2>&1 ) &
+r=$!; wait_for 90 sh -c "! kill -0 $r"; kill $r 2>/dev/null
+tail -n +"$((n0 + 1))" "$T/fix/logs/runner.log" > "$T/mixed.log"
+check "runner: the stack's bottom and the independent A and X start together, before any chain ends ($(grep -o 'chain started: [^ ]*' "$T/mixed.log" | head -3 | cut -d' ' -f3 | tr '\n' ' '))" \
+    "$PY" - "$T/mixed.log" <<'EOF'
+import sys
+lines = open(sys.argv[1]).read().splitlines()
+started = [l.split("chain started: ")[1].split()[0] for l in lines if "chain started: " in l]
+first_end = next(i for i, l in enumerate(lines) if "chain ended: " in l)
+early = [l.split("chain started: ")[1].split()[0] for l in lines[:first_end] if "chain started: " in l]
+assert sorted(early) == ["ind-a", "ind-x", "t1"], (early, started)
+EOF
+check "runner: ... 2 starts only once 1 has opened its PR, and the stack runs to the top" \
+    sh -c "a=\$(grep -n 'chain ended: t1 ' '$T/mixed.log' | cut -d: -f1); b=\$(grep -n 'chain started: t2 ' '$T/mixed.log' | cut -d: -f1); [ -n \"\$a\" ] && [ -n \"\$b\" ] && [ \"\$b\" -gt \"\$a\" ] && grep -q 'chain ended: t4 ' '$T/mixed.log'"
 grep -qiE "unbound|command not found|invalid option|syntax error" "$T/runner-stack.out" && bad "runner (stacks): shell errors: $(grep -iE 'unbound|not found|invalid|syntax' "$T/runner-stack.out" | head -2)"
 mv "$T/fix/fixloop.sh.flat" "$T/fix/fixloop.sh"
 

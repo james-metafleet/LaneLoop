@@ -124,10 +124,10 @@ Each entry is a failure seen in a real run. Symptom → cause → fix.
 - **Every check failed in 2 to 3 seconds with zero steps.** → The GitHub Actions budget, not the code.
 - **Commits pushed after a merge never reached the base.** → The PR was already merged; only push-triggered jobs ran. →
   After a merge batch, compare each merged PR's head with its branch tip.
-- **One feature's parallel PRs kept conflicting with each other and with the base.** → Each branch was an ordinary PR
-  off the base, so every merge reopened conflicts in the others. → Features ship as PR stacks: each branch is built on
-  the one before it and opens its PR against it (`Stacked on:` in its brief, `.fixloop/base` in its worktree); the
-  runner starts a branch once the one below has a PR; `merge_base.sh` updates a stack bottom-up and moves a branch
+- **One feature's parallel PRs kept conflicting with each other and with the base.** → Branches that built on each
+  other were ordinary PRs off the base, so every merge reopened conflicts in the others. → A branch that builds on
+  another is stacked on it (`"on"` in the plan, `Stacked on:` in its brief, `.fixloop/base` in its worktree), while
+  independent branches still run in parallel; the runner starts a stacked branch once the one below has a PR; `merge_base.sh` updates a stack bottom-up and moves a branch
   down, retargeting its PR, once the branch below merges.
 - **Stacked PRs got no review, security or size checks.** → The repository's workflows ran only on PRs whose base is the
   default branch (`pull_request: branches: [main]`). → Every such filter also takes the run's branch prefix
