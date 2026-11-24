@@ -27,12 +27,11 @@ if [ -n "$own" ] && [ "$base" != "$was" ] && [ "${own#* }" != "$was" ] && [ "${2
     # pushes) its branch. Take that rebase; a merge on top would be refused as a non-fast-forward, or need a force-push.
     live="${own#* }"
     [ -z "$(git status --porcelain | grep -v '^??')" ] || { echo "working tree not clean:"; git status --short | head; exit 2; }
-    seen=$(git reflog show --format=%H "refs/remotes/origin/$br" 2>/dev/null)   # every tip the remote branch has had here
+    # every tip the remote branch has had here: its tip before this fetch, and its reflog (which expires) for older ones
+    seen="$(git rev-parse -q --verify "refs/remotes/origin/$br") $(git reflog show --format=%H "refs/remotes/origin/$br" 2>/dev/null)"
     git fetch -q origin "$br"
     ahead=$(git rev-list --count HEAD --not "origin/$br")
     unpushed=$(git rev-list --count HEAD --not "origin/$br" $seen)
-    # the stacks API answer names pull_requests only when the PR is in a stack ([] otherwise, a 404 without stacks)
-    stack=$(gh api "repos/$GH_REPO/stacks?pull_request=${own%% *}" 2>/dev/null | grep -c '"pull_requests"')
     if [ "$ahead" -gt "$unpushed" ]; then   # commits once pushed are gone from origin/$br: it was rebased
         if [ "$unpushed" -gt 0 ]; then
             echo "INCOMPLETE: GitHub moved PR #${own%% *} onto $live and rebased $br, but $unpushed local commit(s) were never"
@@ -44,7 +43,8 @@ if [ -n "$own" ] && [ "$base" != "$was" ] && [ "${own#* }" != "$was" ] && [ "${2
         echo "GitHub moved PR #${own%% *} onto $live and rebased it: $br now matches origin/$br ($(git log --oneline -1 | cat))"
         echo "nothing merged or retargeted; run the gate before the next push, and never force-push"
         exit 0
-    elif [ "${stack:-0}" -gt 0 ]; then
+    # the stacks API answer names pull_requests only when the PR is in a stack ([] otherwise, a 404 without stacks)
+    elif gh api "repos/$GH_REPO/stacks?pull_request=${own%% *}" 2>/dev/null | grep -q '"pull_requests"'; then
         echo "INCOMPLETE: PR #${own%% *} is in a GitHub stack and now on $live, but GitHub hasn't rebased $br yet."
         echo "Nothing changed; run merge_base.sh again once it has."
         exit 4

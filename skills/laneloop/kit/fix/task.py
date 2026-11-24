@@ -6,7 +6,9 @@
   pr NUMBER URL                the PR you opened. It must be this branch's and sit on your base (.fixloop/base): one
                                opened on another base is retargeted to it, and if gh can't read or retarget it, nothing
                                is recorded (exit 1). On a branch below (not the run's base) it also joins that branch's
-                               PR in a GitHub stack (made, or added to on top); a refused stack records nothing (exit 1)
+                               PR in a GitHub stack (made, or added to on top); a refused stack records nothing (exit 1).
+                               A read that hits a passing outage (5xx, rate limit, timeout) is tried 3 times, 5 s apart,
+                               before it refuses
   review "comment (who, where, comment id)" "proposed resolution"
                                a review comment that needs action: PROPOSE only, never apply
   ask "Title" "question" "recommended answer" ["other answer" ...]
@@ -123,6 +125,25 @@ def gh(*args, stdin=None):
         return 1, "", str(e)
 
 
+PASSING = re.compile(r"HTTP 5\d\d|rate limit|timed out|timeout|deadline exceeded", re.I)   # an outage, not an answer
+
+
+def gh_retry(*args, stdin=None, again=PASSING):
+    """gh, tried up to 3 times 5 s apart while it fails with what `again` matches (by default a passing outage: a 5xx, a
+    rate limit, a timeout), so a PR that opened fine isn't refused for a moment's 502. Any other failure returns at once."""
+    for _ in range(2):
+        rc, out, err = gh(*args, stdin=stdin)
+        if not rc or not again.search(err):
+            return rc, out, err
+        time.sleep(int(os.environ.get("GH_RETRY_SECS", "5")))
+    return gh(*args, stdin=stdin)
+
+
+def trunk():
+    """The run's BASE, the bottom of every stack ("" when loop.json doesn't say): the one place both checks read it."""
+    return CONF.get("BASE") or ""
+
+
 def stacked(n):
     """`pr N URL` records a PR only once it is this branch's and sits on this branch's base in the stack (.fixloop/base, or
     the run's BASE): a session told to open it there may still open it on the base, and the owner would have to stack it
@@ -132,11 +153,11 @@ def stacked(n):
         base = open(os.path.join(RUN, "base"), encoding="utf8").read().strip()
     except OSError:
         base = ""
-    base = base or CONF.get("BASE", "")
+    base = base or trunk()
     if not base:
         raise SystemExit(f"PR #{n} not recorded: no .fixloop/base and no BASE in loop.json, so its base can't be checked")
     repo = ["--repo", CONF["GH_REPO"]] if CONF.get("GH_REPO") else []
-    rc, out, err = gh("pr", "view", n, "--json", "baseRefName,headRefName", "--jq", '"\\(.baseRefName) \\(.headRefName)"', *repo)
+    rc, out, err = gh_retry("pr", "view", n, "--json", "baseRefName,headRefName", "--jq", '"\\(.baseRefName) \\(.headRefName)"', *repo)
     on, _, head = out.partition(" ")
     if rc or not on:
         raise SystemExit(f"PR #{n} not recorded: gh couldn't read its base ({err}). Check the number, then run task.py pr again")
@@ -166,14 +187,16 @@ def github_stack(n, base):
     """A PR on a branch below (not the run's BASE) joins that branch's PR in a GitHub stack, so the owner sees and merges
     them as one, and GitHub moves the PR down itself when the one below merges. Stacks are linear: a second PR on the
     same parent stays base-chained. Returns the note's tail; exits non-zero, recording nothing, if GitHub refuses."""
-    if base == CONF.get("BASE"):
+    if not trunk():
+        return "; its GitHub stack wasn't checked: no BASE in loop.json to tell the bottom of a stack from a branch below"
+    if base == trunk():
         return ""
     repo = ["--repo", CONF["GH_REPO"]] if CONF.get("GH_REPO") else []
     api = f"repos/{CONF.get('GH_REPO') or '{owner}/{repo}'}/stacks"
     refused = f"PR #{n} not recorded: it sits on {base}, but GitHub"
 
     def stack_of(pr):
-        rc, out, err = gh("api", f"{api}?pull_request={pr}")
+        rc, out, err = gh_retry("api", f"{api}?pull_request={pr}")
         if rc and "404" in err:
             return None
         if rc:
@@ -188,11 +211,9 @@ def github_stack(n, base):
         return {"number": found[0].get("number") or found[0].get("id"), "prs": prs}
 
     def post(path, prs):
-        for _ in range(3):   # 409: the stack is being changed (another PR joining it), so wait and try again
-            rc, out, err = gh("api", "-X", "POST", path, "--input", "-", stdin=json.dumps({"pull_requests": prs}))
-            if not rc or "409" not in err:
-                break
-            time.sleep(5)
+        # 409: the stack is being changed (another PR joining it), so wait and try again; a write isn't retried on a 5xx
+        rc, out, err = gh_retry("api", "-X", "POST", path, "--input", "-", stdin=json.dumps({"pull_requests": prs}),
+                                again=re.compile("409"))
         if rc:
             raise SystemExit(f"{refused} refused to stack it ({err}). Stack it by hand from the PR page, or run task.py pr again")
         try:
@@ -200,7 +221,7 @@ def github_stack(n, base):
         except (ValueError, AttributeError):
             return None
 
-    rc, below, err = gh("pr", "view", base, "--json", "number,state", "--jq", '"\\(.number) \\(.state)"', *repo)
+    rc, below, err = gh_retry("pr", "view", base, "--json", "number,state", "--jq", '"\\(.number) \\(.state)"', *repo)
     if rc or not below:
         raise SystemExit(f"{refused} couldn't find the PR of {base} below it ({err}). Run task.py pr again")
     parent, state = below.split(" ", 1)

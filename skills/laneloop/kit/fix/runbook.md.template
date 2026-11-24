@@ -88,8 +88,9 @@ Run task.py and gate.py with these exact paths (they are allow-listed): `{{PYTHO
    `{{PR_FOOTER}}`. Commit messages end with
    `{{COMMIT_TRAILER}}`. If the repository's instructions ask for
    anything alongside a PR (a changelog entry, a tracking file), add it, commit and push. `task.py pr <N> <url>`: it reads
-   the PR's base from GitHub and, if it isn't `<base>`, retargets the PR there and notes it. If it can't read or retarget
-   it, it records nothing and exits non-zero: fix what it says (the number, usually) and run it again; the pr phase isn't
+   the PR's base from GitHub and, if it isn't `<base>`, retargets the PR there and notes it. A read that hits a passing
+   GitHub outage (5xx, rate limit, timeout) is tried 3 times, 5 s apart. If it still can't read or retarget it, it
+   records nothing and exits non-zero: fix what it says (the number, usually) and run it again; the pr phase isn't
    done until it says `ok`. On a branch that is stacked (not the bottom) it also puts the PR in a GitHub stack with the
    PR below it (made, or added on top); a second PR on the same parent stays base-chained (GitHub stacks are linear) and
    the note says so. If GitHub refuses the stack, nothing is recorded: run it again. Never merge a PR and never
